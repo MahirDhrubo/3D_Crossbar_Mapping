@@ -44,6 +44,16 @@ class MappingState:
 
     def has_net_on_row(self, net: str, row: int) -> bool:
         return any(y == row for (x, y) in self.net_location.get(net, set()))
+    
+    def copy_cost_at(self, net: str, dest: Coordinate) -> int:
+        if self.location_to_net.get(dest) == net:
+            return 0
+        
+        # copy from same row -> 2 cycles (not, not)
+        # copy from different row -> 3 cycles (not, and, not)
+        
+        return 2 if self.has_net_on_row(net, dest[1]) else 3
+
 
     def copy_net(self, net: str, src: Coordinate, dest: Coordinate) -> None:
         self._put_net(net, dest)

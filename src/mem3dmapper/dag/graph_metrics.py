@@ -1,5 +1,6 @@
 from collections import deque
 from typing import Dict
+from scipy.optimize import linear_sum_assignment
 
 from mem3dmapper.netlist.types import Netlist
 
@@ -71,3 +72,13 @@ def compute_gate_input_depths(netlist: Netlist, gate_depths: Dict[int, int]) -> 
         input_depths[gate.output] = gate_depths[gate.gid]
 
     return input_depths
+
+def hungarian_algo(cost):
+    """
+    Apply the Hungarian algorithm to solve the assignment problem.
+    """
+    row_index, col_index = linear_sum_assignment(cost)
+
+    min_cost = cost[row_index, col_index].sum()
+
+    return row_index, col_index, min_cost

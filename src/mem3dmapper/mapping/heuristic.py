@@ -1,12 +1,13 @@
 from typing import List, Dict, Tuple, Optional
+from itertools import permutations
 
 from mem3dmapper.netlist.types import Netlist
 from mem3dmapper.dag.graph_metrics import *
 from mem3dmapper.dag.build import build_DAG
 from mem3dmapper.netlist.types import Gate, GateType
-from mem3dmapper.mapping.types import Coordinate, MappingConfig, Operation
+from mem3dmapper.mapping.types import Coordinate, MappingConfig, Operation, AndPlacementPlant
 from mem3dmapper.mapping.state import MappingState
-from mem3dmapper.mapping.cost import calculate_future_misalignment_nor, nor_row_cost
+from mem3dmapper.mapping.cost import calculate_future_misalignment_nor, nor_row_cost, and_column_cost
 
 def _compute_fanout(netList: Netlist) -> Tuple[Dict[str, int], Dict[str, int], Dict[str, int]]:
     """
@@ -42,12 +43,11 @@ def _compute_fanout(netList: Netlist) -> Tuple[Dict[str, int], Dict[str, int], D
 
     return total_fanout, row_fanout, col_fanout
 
-def _build_cluster_id_map(netlist: Netlist, gate_depth: Dict[int, int]) -> Dict[int, int]:
+def _build_cluster_id_map(netlist: Netlist, gate_depth: Dict[int, int], cluster_window = 10) -> Dict[int, int]:
 
     gate_input_depth = compute_gate_input_depths(netlist, gate_depth)
-    w = 10
 
-    return {net: depth // w for net, depth in gate_input_depth.items()}
+    return {net: depth // cluster_window for net, depth in gate_input_depth.items()}
 
 def _heuristic_choose_nor_inv_row(
         state: MappingState,
@@ -100,8 +100,6 @@ def _heuristic_choose_nor_inv_row(
 
     return best_row
     
-
-
 
 def _map_nor_inv(
         *,
@@ -171,6 +169,96 @@ def _map_nor_inv(
     if state.row_cluster[row] is None:
         state.row_cluster[row] = cluster_id_map.get(gate.output, 0)
 
+def _heuristic_AND_placement(
+        *,
+        state: MappingState,
+        inputs: List[str],
+        output: str,
+        uses_left: Dict[str, int],
+        cluster_id_map: Dict[str, int],
+        row_fanout: int,
+) -> AndPlacementPlant:
+    
+    best_placement = None
+    best_cost = float("inf")
+
+    input_length = len(inputs)
+
+    #AND placement window limit
+    y_limit = max(0, state.config.total_rows -  input_length)
+    for col in range(state.config.total_columns):
+        for row_start in range(0, y_limit + 1):
+            output_cell_candidates = [row_start - 1, row_start + input_length]
+
+            for output_cell_row in output_cell_candidates:
+                if output_cell_row < 0 or output_cell_row > state.config.total_rows:
+                    continue
+
+                net = state.location_to_net.get((col, output_cell_row))
+                if net in inputs or uses_left[net] != 0:
+                    continue
+
+                window_available = True
+                for c in range(input_length):
+                    cell_net = state.location_to_net.get((col, row_start + c))
+                    if cell_net not in inputs and uses_left.get(cell_net, 0) != 0:
+                        window_available = False
+                        break
+                
+                if not window_available:
+                    continue
+
+                # row -> inputs, col -> input positions
+                cost_mat = [[state.copy_cost_at(inputs[i], (col, row_start + c)) for c in range(input_length)] for i in range(input_length)]
+                row_ind, col_ind, copy_cost = hungarian_algo(cost_mat)
+
+                future_misalignment_cost = calculate_future_misalignment_nor(
+                    net_c=output,
+                    row=output_cell_row,
+                    intended_cluster=state.row_cluster[output_cell_row],
+                    net_cluster=cluster_id_map.get(output, 0),
+                    row_fanout=row_fanout
+                )
+
+                total_cost = and_column_cost(
+                    copies=copy_cost,
+                    future_misalignment_cost=future_misalignment_cost
+                )
+
+                if total_cost < best_cost:
+                    best_cost = total_cost
+                    best_placement = AndPlacementPlant(
+                        column=col,
+                        input_row_start=row_start,
+                        output_cell_row=output_cell_row,
+                        input_sequence=[inputs[i] for i in row_ind]
+                    )
+
+    if best_placement is None:
+        raise RuntimeError("No valid placement found for AND gate")
+    
+    return best_placement
+
+def _map_and_gate(
+        *,
+        state: MappingState,
+        gate: Gate,
+        uses_left: Dict[str, int],
+        cluster_id_map: Dict[str, int],
+        row_fanout: int
+) -> None:
+    placement = _heuristic_AND_placement(
+        state=state,
+        inputs=gate.inputs,
+        output=gate.output,
+        uses_left=uses_left,
+        cluster_id_map=cluster_id_map,
+        row_fanout=row_fanout
+    )
+
+    
+
+
 
 def map_netlist(netlist: Netlist) -> List[Operation]:
     config = MappingConfig()
@@ -185,7 +273,7 @@ def map_netlist(netlist: Netlist) -> List[Operation]:
     gate_depths = compute_depths(parents, topo_order)
 
     total_fanout, row_fanout, col_fanout = _compute_fanout(netlist)
-    cluster_id_map = _build_cluster_id_map(netlist, gate_depths)
+    cluster_id_map = _build_cluster_id_map(netlist, gate_depths, cluster_window=state.config.cluster_window)
     uses_left: Dict[str, int] = dict(total_fanout)
 
     gates_by_id: Dict[int, Gate] = {g.gid: g for g in netlist.gates}

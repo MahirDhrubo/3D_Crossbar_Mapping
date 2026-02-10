@@ -3,7 +3,7 @@ from enum import Enum, auto
 from typing import Tuple, List, Optional
 
 
-Coordinate = Tuple[int, int]
+Coordinate = Tuple[int, int] # (x,y) => (col, row)
 
 class Operation_type(Enum):
     WRITE = auto()
@@ -27,8 +27,16 @@ class Operation:
 class MappingConfig:
     total_rows: int = 4
     total_columns: int = 4
+    cluster_window: int = 10
 
 
     alpha: float = 1.0
     beta: float = 1.0
     gamma: float = 1.0
+
+@dataclass
+class AndPlacementPlant:
+    column: int
+    input_row_start: int
+    output_cell_row: int
+    input_sequence: List[str]
