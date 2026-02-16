@@ -19,7 +19,7 @@ jupyterlab_widgets==3.0.16
 kiwisolver==1.4.9
 matplotlib==3.10.8
 matplotlib-inline==0.2.1
--e git+ssh://git@github.com/MahirDhrubo/3D_Crossbar_Mapping.git@7cf677b21238355d986bc95c89aca52f50fe7b8a#egg=mem3dmapper
+-e git+ssh://git@github.com/MahirDhrubo/3D_Crossbar_Mapping.git@529aaabf89e69fa260f137d088705d06271bc698#egg=mem3dmapper
 nest-asyncio==1.6.0
 numpy==2.2.6
 opencv-python==4.13.0.90
@@ -36,6 +36,7 @@ Pygments==2.19.2
 pyparsing==3.3.2
 python-dateutil==2.9.0.post0
 pyzmq==27.1.0
+scipy==1.15.3
 six==1.17.0
 stack-data==0.6.3
 tornado==6.5.4

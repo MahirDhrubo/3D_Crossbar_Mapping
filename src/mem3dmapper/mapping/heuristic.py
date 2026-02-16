@@ -191,11 +191,11 @@ def _heuristic_AND_placement(
             output_cell_candidates = [row_start - 1, row_start + input_length]
 
             for output_cell_row in output_cell_candidates:
-                if output_cell_row < 0 or output_cell_row > state.config.total_rows:
+                if output_cell_row < 0 or output_cell_row >= state.config.total_rows:
                     continue
 
                 net = state.location_to_net.get((col, output_cell_row))
-                if net in inputs or uses_left[net] != 0:
+                if net in inputs or uses_left.get(net, 0) != 0:
                     continue
 
                 window_available = True
@@ -256,8 +256,37 @@ def _map_and_gate(
         row_fanout=row_fanout
     )
 
-    
+    column = placement.column
+    input_row_start = placement.input_row_start
+    output_cell_row = placement.output_cell_row
+    input_sequence = placement.input_sequence 
 
+    # check if the inputs exists,
+    # otherwise, copy them to the designated input positions
+    for i, inp in enumerate(input_sequence):
+        net = state.location_to_net.get((column, input_row_start + i))
+        if net != inp:
+            src = state.get_location_of_net_on_row(inp, input_row_start + i)
+            if src is None:
+                src = state.get_any_location_of_net(inp)
+            dest = (column, input_row_start + i)
+
+            if src is None:
+                state.write_net(inp, dest)
+            else:
+                state.copy_net(inp, src, dest)
+
+    out_location = (column, output_cell_row)
+    state.execute_net(
+        net=gate.output,
+        location=out_location,
+        gateType=gate.type,
+        inputs=tuple(gate.inputs),
+        input_locations=[(column, input_row_start + i) for i in range(len(input_sequence))]
+    )
+
+    for inp in gate.inputs:
+        uses_left[inp] -= 1    
 
 
 def map_netlist(netlist: Netlist) -> List[Operation]:
@@ -290,7 +319,13 @@ def map_netlist(netlist: Netlist) -> List[Operation]:
                 row_fanout=row_fanout.get(gate.output, 0)
             )
         elif gate.type == GateType.AND:
-            pass
+            _map_and_gate(
+                state=state,
+                gate=gate,
+                uses_left=uses_left,
+                cluster_id_map=cluster_id_map,
+                row_fanout=row_fanout.get(gate.output, 0)
+            )
         else:
             raise ValueError(f"Unsupported gate type: {gate.type}") 
     

@@ -20,18 +20,16 @@ class EnumEncoder(json.JSONEncoder):
             return obj.__dict__
         return super().default(obj)
 
-netlist = parse_netlist("data/netlists/2bit_adder_nor.blif")
+netlist = parse_netlist("data/netlists/2bit_adder.blif")
 print(netlist.name, len(netlist.gates), "gates")
-
-
 
 parents, children = build_DAG(netlist)
 topo_order = topo_sort(children)
 print("Topological Order of Gates:", topo_order)
 
 ### view DAG as DOT file
-dot_file = write_dot("data/runs/2bit_adder_nor.dot", netlist, parents, children)
-render_graphviz(dot_file, "data/runs/2bit_adder_nor.png", fmt="png")
+dot_file = write_dot("data/runs/2bit_adder.dot", netlist, parents, children)
+render_graphviz(dot_file, "data/runs/2bit_adder.png", fmt="png")
 
 state = map_netlist(netlist=netlist)
 
@@ -39,7 +37,7 @@ validate_mapping(netlist, state)
 
 execution = state.ops
 
-with open("data/json/2bit_adder_nor_mapping.json", "w") as f:
+with open("data/json/2bit_adder_mapping.json", "w") as f:
     json.dump(execution, f, indent=4, cls=EnumEncoder)
 
 

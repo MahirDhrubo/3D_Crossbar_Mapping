@@ -41,6 +41,12 @@ class MappingState:
     def get_any_location_of_net(self, net: str) -> Coordinate:
         #returns none if net not found
         return next(iter(self.net_location.get(net, set())), None)
+    
+    def get_location_of_net_on_row(self, net: str, row: int) -> Coordinate:
+        for location in self.net_location.get(net, set()):
+            if location[1] == row:
+                return location
+        return None
 
     def has_net_on_row(self, net: str, row: int) -> bool:
         return any(y == row for (x, y) in self.net_location.get(net, set()))

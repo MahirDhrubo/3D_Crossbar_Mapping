@@ -79,6 +79,7 @@ def hungarian_algo(cost):
     """
     row_index, col_index = linear_sum_assignment(cost)
 
-    min_cost = cost[row_index, col_index].sum()
+    # min_cost = cost[row_index, col_index].sum() if cost is numpy
+    min_cost = sum(cost[i][j] for i, j in zip(row_index, col_index))   
 
     return row_index, col_index, min_cost
