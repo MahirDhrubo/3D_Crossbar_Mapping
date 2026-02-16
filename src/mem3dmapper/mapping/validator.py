@@ -27,6 +27,9 @@ def validate_mapping(netlist: Netlist, state: MappingState) -> None:
         
     
     #validate_nor_inv_gates(netlist, location)
+
+
+# validate if gate inputs exists
         
 
 def validate_nor_inv_gates(netlist:Netlist, location: Dict[str, set[Coordinate]]) -> None:
