@@ -26,7 +26,7 @@ class Operation:
 @dataclass(frozen=True)
 class MappingConfig:
     total_rows: int = 4
-    total_columns: int = 4
+    total_columns: int = 6
     cluster_window: int = 10
 
 

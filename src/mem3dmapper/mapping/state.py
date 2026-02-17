@@ -8,24 +8,30 @@ from mem3dmapper.netlist.types import GateType
 @dataclass
 class MappingState:
     config: MappingConfig
-    cycle_count: int = 0
 
+    primary_outputs: List[str] = field(default_factory=list)
     primary_input_locations: Dict[str, Coordinate] = field(default_factory=dict)
+    primary_output_locations: Dict[str, Coordinate] = field(default_factory=dict)
     net_location: Dict[str, set[Coordinate]] = field(default_factory=dict)
     location_to_net: Dict[Coordinate, str] = field(default_factory=dict)
+    copy_count: Dict[str, int] = field(default_factory=dict) # copies of nets
+    uses_left: Dict[str, int] = field(default_factory=dict) # uses left for each net
 
     ops: list[Operation] = field(default_factory=list)
     number_of_writes: int = 0
+    cycle_count: int = 0
+    total_cost: float = 0.0
 
     tail_x: List[int] = field(default_factory=list)
     row_cluster: List[int] = field(default_factory=list)
 
-    def init_params(self) -> None:
+    def init_params(self, primary_outputs: List[str]) -> None:
         self.tail_x = [0] * self.config.total_rows
         self.row_cluster = [0] * self.config.total_rows
+        self.primary_outputs = primary_outputs
 
-    def _increment_cycle(self) -> None:
-        self.cycle_count += 1
+    def _increment_cycle(self, val = 1) -> None:
+        self.cycle_count += val
 
     def _put_net(self, net: str, location: Coordinate) -> None:
         previous_net = self.location_to_net.get(location)
@@ -35,9 +41,12 @@ class MappingState:
     
         self.location_to_net[location] = net
         self.net_location.setdefault(net, set()).add(location)
+    
+    def _count_copy_cycle(self, src: Coordinate, dest: Coordinate) -> int:
+        return 2 if src[1] == dest[1] else 3
 
     def get_remaining_columns_on_row(self, row: int) -> int:
-        return self.config.total_columns - self.tail_x[row]
+        return self.config.total_columns - self.tail_x[row] - 1
     
     def get_any_location_of_net(self, net: str) -> Coordinate:
         #returns none if net not found
@@ -55,10 +64,9 @@ class MappingState:
     def copy_cost_at(self, net: str, dest: Coordinate) -> int:
         if self.location_to_net.get(dest) == net:
             return 0
-        
-        if dest in self.primary_input_locations:
-            return 1000 # prohibit copying to primary input locations
-        
+        if dest in self.primary_input_locations.values() or dest in self.primary_output_locations.values():
+            return 1000 # prohibit copying to primary input/output locations
+
         # copy from same row -> 2 cycles (not, not)
         # copy from different row -> 3 cycles (not, and, not)
         
@@ -67,7 +75,8 @@ class MappingState:
 
     def copy_net(self, net: str, src: Coordinate, dest: Coordinate) -> None:
         self._put_net(net, dest)
-        self._increment_cycle()
+
+        self._increment_cycle(self._count_copy_cycle(src, dest))
         self.ops.append(Operation(
             type=Operation_type.COPY,
             net=net,
@@ -114,3 +123,23 @@ class MappingState:
             src=input_locations,
             cycle=self.cycle_count
         ))
+
+    def is_loc_allowed(self, location: Coordinate) -> bool:
+        # Check if the location is within the bounds of the grid
+        if not (0 <= location[0] < self.config.total_columns and 0 <= location[1] < self.config.total_rows):
+            return False
+
+        if location in self.primary_input_locations.values():
+            return False
+
+        if location in self.primary_output_locations.values():
+            return False
+        
+        if self.uses_left.get(self.location_to_net.get(location), 0) != 0:
+            return False
+
+        return True
+    
+    def is_net_replacable(self, net:str) -> bool:
+        # A net is replacable if it has no more uses left or has multiple copies
+        return self.copy_count.get(net, 0) > 0

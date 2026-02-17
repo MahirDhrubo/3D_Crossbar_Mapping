@@ -4,7 +4,7 @@ def nor_row_cost(
         new_columns,
         copies,
         future_misalignment_cost,
-        alpha=1.0,
+        alpha=0.0,
         beta=1.0,
         gamma=1.0
     ) -> float:
