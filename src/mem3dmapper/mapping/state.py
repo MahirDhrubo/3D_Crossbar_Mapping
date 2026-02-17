@@ -10,6 +10,7 @@ class MappingState:
     config: MappingConfig
     cycle_count: int = 0
 
+    primary_input_locations: Dict[str, Coordinate] = field(default_factory=dict)
     net_location: Dict[str, set[Coordinate]] = field(default_factory=dict)
     location_to_net: Dict[Coordinate, str] = field(default_factory=dict)
 
@@ -54,6 +55,9 @@ class MappingState:
     def copy_cost_at(self, net: str, dest: Coordinate) -> int:
         if self.location_to_net.get(dest) == net:
             return 0
+        
+        if dest in self.primary_input_locations:
+            return 1000 # prohibit copying to primary input locations
         
         # copy from same row -> 2 cycles (not, not)
         # copy from different row -> 3 cycles (not, and, not)

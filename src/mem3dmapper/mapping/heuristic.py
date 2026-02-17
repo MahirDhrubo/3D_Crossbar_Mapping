@@ -72,8 +72,10 @@ def _heuristic_choose_nor_inv_row(
         # calculateing number of columns that can be overwritten
         dead_cells = 0
         for (x,y), net in state.location_to_net.items():
-            if y == row and uses_left.get(net) == 0 and net not in inputs:
+            if (x,y) not in state.primary_input_locations.values() and y == row and uses_left.get(net, 0) == 0 and net not in inputs:
                 dead_cells += 1
+                if dead_cells >= missing + 1: # +1 for the output
+                    break
 
         new_columns = max(missing + 1 - dead_cells, 0)
 
@@ -130,7 +132,7 @@ def _map_nor_inv(
             src = state.get_any_location_of_net(inp)
             dest: Coordinate = None
             for (x, y), net in state.location_to_net.items():
-                if y == row and uses_left.get(net) == 0 and net not in gate.inputs:
+                if (x,y) not in state.primary_input_locations.values() and y == row and uses_left.get(net, 0) == 0 and net not in gate.inputs:
                     dest = (x, y)
                     break
 
@@ -140,6 +142,8 @@ def _map_nor_inv(
 
             if src is None:
                 state.write_net(inp, dest)
+                state.primary_input_locations[inp] = dest
+
             else:
                 state.copy_net(inp, src, dest)
 
@@ -148,7 +152,7 @@ def _map_nor_inv(
     # output placement
     out_location: Coordinate = None
     for (x, y), net in state.location_to_net.items():
-        if y == row and uses_left.get(net) == 0 and net not in gate.inputs:
+        if (x,y) not in state.primary_input_locations.values() and y == row and uses_left.get(net, 0) == 0 and net not in gate.inputs:
             out_location = (x, y)
             break
     if out_location is None:
@@ -201,7 +205,7 @@ def _heuristic_AND_placement(
                 window_available = True
                 for c in range(input_length):
                     cell_net = state.location_to_net.get((col, row_start + c))
-                    if cell_net not in inputs and uses_left.get(cell_net, 0) != 0:
+                    if cell_net not in inputs and (uses_left.get(cell_net, 0) != 0 or (col, row_start + c) in state.primary_input_locations.values()):
                         window_available = False
                         break
                 
@@ -273,6 +277,7 @@ def _map_and_gate(
 
             if src is None:
                 state.write_net(inp, dest)
+                state.primary_input_locations[inp] = dest
             else:
                 state.copy_net(inp, src, dest)
 
@@ -289,7 +294,7 @@ def _map_and_gate(
         uses_left[inp] -= 1    
 
 
-def map_netlist(netlist: Netlist) -> List[Operation]:
+def map_netlist(netlist: Netlist) -> MappingState:
     config = MappingConfig()
     state = MappingState(config=config)
     state.init_params()
@@ -309,7 +314,6 @@ def map_netlist(netlist: Netlist) -> List[Operation]:
 
     for gid in topo_order:
         gate = gates_by_id[gid]
-
         if gate.type == GateType.NOR or gate.type == GateType.NOT:
             _map_nor_inv(
                 state=state,
@@ -328,5 +332,8 @@ def map_netlist(netlist: Netlist) -> List[Operation]:
             )
         else:
             raise ValueError(f"Unsupported gate type: {gate.type}") 
+
+        print(state.primary_input_locations)
+        print((0,0) in state.primary_input_locations)
     
     return state

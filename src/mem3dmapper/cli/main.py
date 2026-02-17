@@ -1,8 +1,10 @@
 from enum import Enum
 import json
 from typing import List
+import inspect
+import sys
 
-from mem3dmapper.mapping import state
+from mem3dmapper.mapping.state import MappingState
 from mem3dmapper.netlist.parser import parse_netlist
 from mem3dmapper.netlist.types import Netlist
 from mem3dmapper.dag.build import build_DAG
@@ -32,7 +34,7 @@ dot_file = write_dot("data/runs/2bit_adder.dot", netlist, parents, children)
 render_graphviz(dot_file, "data/runs/2bit_adder.png", fmt="png")
 
 state = map_netlist(netlist=netlist)
-
+print("from main:", state.primary_input_locations)
 validate_mapping(netlist, state)
 
 execution = state.ops
