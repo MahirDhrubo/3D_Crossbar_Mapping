@@ -5,7 +5,7 @@ from mem3dmapper.netlist.types import Netlist
 from mem3dmapper.dag.graph_metrics import *
 from mem3dmapper.dag.build import build_DAG
 from mem3dmapper.netlist.types import Gate, GateType
-from mem3dmapper.mapping.types import Coordinate, MappingConfig, Operation, AndPlacementPlant
+from mem3dmapper.mapping.types import Coordinate, MappingConfig, NorInvPlacementPlan, AndPlacementPlan
 from mem3dmapper.mapping.state import MappingState
 from mem3dmapper.mapping.cost import calculate_future_misalignment_nor, nor_row_cost, and_column_cost
 
@@ -49,58 +49,118 @@ def _build_cluster_id_map(netlist: Netlist, gate_depth: Dict[int, int], cluster_
 
     return {net: depth // cluster_window for net, depth in gate_input_depth.items()}
 
+def _get_input_columns(allowed_cells: List[Coordinate], replaceable_cells: List[Coordinate]) -> List[int]:
+    """
+    Get the input columns for a NOR gate placement based on allowed and replaceable cells.
+    """
+    input_columns = []
+    for cell in allowed_cells:
+        if cell in replaceable_cells:
+            input_columns.append(cell[0])
+    return input_columns
+
 def _heuristic_choose_nor_inv_row(
         state: MappingState,
         inputs: List[str],
         output: str,
         cluster_id_map: Dict[str, int],
-        row_fanout: int
-) -> int:
+        row_fanout: Dict[str, int]
+) -> NorInvPlacementPlan:
     """
     Choose an appropriate row for placing a NOR gate based on heuristic criteria.
     """
     best_row = -1
+    best_placement = None
     best_cost = float('inf')
 
     for row in range(state.config.total_rows):
         missing = 0
+        missing_inputs = []
         for s in inputs:
             if not state.has_net_on_row(s, row):
                 missing += 1
+                missing_inputs.append(s)
 
         # calculateing number of columns that can be overwritten
-        allowed_cells = 0
+        allowed_cells: List[Coordinate] = []
+        replaceable_cells: List[Coordinate] = []
         for (x,y), net in state.location_to_net.items():
-            if state.is_loc_allowed((x,y)) and y == row and net not in inputs and net not in state.primary_outputs:
-                allowed_cells += 1
-                if allowed_cells >= missing + 1: # +1 for the output
-                    break
+            if y == row and net not in inputs:
+                if state.is_loc_allowed((x,y)):
+                    allowed_cells.append((x,y))
 
-        new_columns = max(missing + 1 - allowed_cells, 0)
-        print(output, row, new_columns)
+                elif state.is_net_replacable((x,y)):
+                    replaceable_cells.append((x,y))
 
-        if new_columns > state.get_remaining_columns_on_row(row):
+        new_columns = max(missing + 1 - len(allowed_cells), 0)
+
+        if new_columns > state.get_remaining_columns_on_row(row) + len(replaceable_cells):
             continue
+
+        required_replacements = max(new_columns - state.get_remaining_columns_on_row(row), 0)
+        total_replacement_cost = 0
+        selected_replacable_cells: List[Coordinate] = []
+        if required_replacements > 0:
+            def _cell_fanout(cell: Coordinate) -> int:
+                net = state.location_to_net.get(cell)
+                return row_fanout.get(net, 0)
+            
+            sorted_replaceable_cells = sorted(replaceable_cells, key=_cell_fanout)
+            selected_replacable_cells = sorted_replaceable_cells[:required_replacements]
+            total_replacement_cost = sum(_cell_fanout(cell) for cell in selected_replacable_cells)
 
         future_misalignment_cost = calculate_future_misalignment_nor(
             net_c=output,
             row=row,
             intended_cluster=state.row_cluster[row],
             net_cluster=cluster_id_map.get(output, 0),
-            row_fanout=row_fanout
+            row_fanout=row_fanout.get(output, 0)
         )
 
         total_cost = nor_row_cost(
             new_columns=new_columns,
-            copies= missing * 3.0, # assuming each missing input requires 3 cycles to copy (worst case)
+            copies= missing,
+            cell_replaced=total_replacement_cost,
             future_misalignment_cost=future_misalignment_cost
         )
 
         if total_cost < best_cost:
             best_cost = total_cost
-            best_row = row
+            input_columns = []
+            column_count = 0
+            total_columns_needed = len(missing_inputs) + 1 # +1 for the output
+            for (x,y) in allowed_cells:
+                if column_count < total_columns_needed: # +1 for the output
+                    input_columns.append(x)
+                    column_count += 1
+                else:
+                    break
+            
+            for _ in range(column_count, total_columns_needed):
+                if column_count < total_columns_needed:
+                    col = state.get_new_column_on_row(row)
+                    if col != -1:
+                        input_columns.append(col)
+                    else:
+                        break
+                else:
+                    break
+            
+            for (x,y) in selected_replacable_cells:
+                if column_count < total_columns_needed:
+                    input_columns.append(x)
+                    column_count += 1
+                else:
+                    break
+            
+            best_placement=NorInvPlacementPlan(
+                row=row,
+                placable_nets=missing_inputs,
+                placement_columns=input_columns[:-1],
+                output_column=input_columns[-1]
+            )
 
-    return best_row, best_cost
+    return best_placement, best_cost
     
 
 def _map_nor_inv(
@@ -108,12 +168,12 @@ def _map_nor_inv(
         state: MappingState,
         gate: Gate,
         cluster_id_map: Dict[str, int],
-        row_fanout: int
-) -> None:
+        row_fanout: Dict[str, int]
+) -> bool:
     """
     Heuristic function to determine the best row for mapping a NOR gate.
     """
-    row, cost = _heuristic_choose_nor_inv_row(
+    placement, cost = _heuristic_choose_nor_inv_row(
         state,
         gate.inputs,
         gate.output,
@@ -121,44 +181,60 @@ def _map_nor_inv(
         row_fanout
     )
 
-    if row == -1:
+    if placement is None:
         raise RuntimeError(f"No valid row found for NOR/INV gate with output {gate.output}")
+    
+    row = placement.row
+    for col, net in zip(placement.placement_columns, placement.placable_nets):
+        dest = (col, row)
+        src = state.get_any_location_of_net(net)
+
+        if src is None:
+            state.write_net(net, dest)
+            state.primary_input_locations[net] = dest
+        else:
+            state.copy_net(net, src, dest)
+    
+    inputs_locations: List[Coordinate] = []
+    for inp in gate.inputs:
+        inputs_locations.extend((x,y) for (x,y) in state.net_location.get(inp, set()) if y == row)
+
+
 
     # ensuring all inputs are available on the chosen row
     # if src not found, write the net to (last available column, row). Typically for the primary inputs
     # if found, copy to an available cell on that row
-    inputs_locations: List[Coordinate] = []
-    for inp in gate.inputs:
-        if not state.has_net_on_row(inp, row):
-            src = state.get_any_location_of_net(inp)
-            dest: Coordinate = None
-            for (x, y), net in state.location_to_net.items():
-                if state.is_loc_allowed((x,y)) and y == row and net not in gate.inputs:
-                    dest = (x, y)
-                    break
+    # for inp in gate.inputs:
+    #     if not state.has_net_on_row(inp, row):
+    #         src = state.get_any_location_of_net(inp)
+    #         dest: Coordinate = None
+    #         for (x, y), net in state.location_to_net.items():
+    #             if state.is_loc_allowed((x,y)) and y == row and net not in gate.inputs:
+    #                 dest = (x, y)
+    #                 break
 
-            if dest is None:
-                dest = (state.tail_x[row], row)
-                state.tail_x[row] += 1
+    #         if dest is None:
+    #             dest = (state.tail_x[row], row)
+    #             state.tail_x[row] += 1
 
-            if src is None:
-                state.write_net(inp, dest)
-                state.primary_input_locations[inp] = dest
+    #         if src is None:
+    #             state.write_net(inp, dest)
+    #             state.primary_input_locations[inp] = dest
 
-            else:
-                state.copy_net(inp, src, dest)
+    #         else:
+    #             state.copy_net(inp, src, dest)
 
-        inputs_locations.extend((x,y) for (x,y) in state.net_location.get(inp, set()) if y == row)
+    #     inputs_locations.extend((x,y) for (x,y) in state.net_location.get(inp, set()) if y == row)
 
     # output placement
-    out_location: Coordinate = None
-    for (x, y), net in state.location_to_net.items():
-        if state.is_loc_allowed((x,y)) and y == row and net not in gate.inputs:
-            out_location = (x, y)
-            break
-    if out_location is None:
-        out_location = (state.tail_x[row], row)
-        state.tail_x[row] += 1
+    out_location: Coordinate = (placement.output_column, placement.row)
+    # for (x, y), net in state.location_to_net.items():
+    #     if state.is_loc_allowed((x,y)) and y == row and net not in gate.inputs:
+    #         out_location = (x, y)
+    #         break
+    # if out_location is None:
+    #     out_location = (state.tail_x[row], row)
+    #     state.tail_x[row] += 1
     
     state.execute_net(
         net=gate.output,
@@ -203,7 +279,7 @@ def _heuristic_AND_placement(
         output: str,
         cluster_id_map: Dict[str, int],
         row_fanout: int,
-) -> AndPlacementPlant:
+) -> AndPlacementPlan:
     
     best_placement = None
     best_cost = float("inf")
@@ -251,7 +327,7 @@ def _heuristic_AND_placement(
 
                 if total_cost < best_cost:
                     best_cost = total_cost
-                    best_placement = AndPlacementPlant(
+                    best_placement = AndPlacementPlan(
                         column=col,
                         input_row_start=row_start,
                         output_cell_row=output_cell_row,
@@ -336,13 +412,14 @@ def map_netlist(netlist: Netlist) -> MappingState:
     best_order: List[int] = None
     min_cycle: int = float('inf')
     gates_by_id: Dict[int, Gate] = {g.gid: g for g in netlist.gates}
-    N = 2500
+    N = 10
     SEED = 42
     # for i in range(1):
+        # topo_order = [1, 2, 3, 4, 5, 6, 9, 0, 7, 8]
         # topo_order = [3, 2, 4, 9, 0, 1, 5, 6, 7, 8]
         # topo_order = [14, 0, 1, 13, 25, 26, 3, 2, 15, 16, 4, 27, 17, 18, 19, 5, 39, 20, 6, 40, 28, 12, 24, 22, 30, 7, 8, 29, 21, 35, 9, 31, 33, 23, 36, 32, 10, 37, 11, 38, 34]
-    # for i, topo_order in enumerate(sample_topo_orders(children, n=N, seed=SEED), start=1):
-    for i, topo_order in enumerate(all_topo_orders(children, limit=N), start=1):
+    for i, topo_order in enumerate(sample_topo_orders(children, n=N, seed=SEED), start=1):
+    # for i, topo_order in enumerate(all_topo_orders(children, limit=N), start=1):
         config = MappingConfig()
         state = MappingState(config=config)
         state.init_params(netlist.primary_outputs)
@@ -354,33 +431,36 @@ def map_netlist(netlist: Netlist) -> MappingState:
         cluster_id_map = _build_cluster_id_map(netlist, gate_depths, cluster_window=state.config.cluster_window)
         state.uses_left = dict(total_fanout)
 
+        is_ok = True
+
         for gid in topo_order:
             gate = gates_by_id[gid]
-            if gate.type == GateType.NOR or gate.type == GateType.NOT:
-                _map_nor_inv(
-                    state=state,
-                    gate=gate,
-                    cluster_id_map=cluster_id_map,
-                    row_fanout=row_fanout.get(gate.output, 0)
-                )
-            elif gate.type == GateType.AND:
-                try:
+            try:
+                if gate.type == GateType.NOR or gate.type == GateType.NOT:
+                    _map_nor_inv(
+                        state=state,
+                        gate=gate,
+                        cluster_id_map=cluster_id_map,
+                        row_fanout=row_fanout
+                    )
+                elif gate.type == GateType.AND:
                     _map_and_gate(
                         state=state,
                         gate=gate,
                         cluster_id_map=cluster_id_map,
                         row_fanout=row_fanout.get(gate.output, 0)
                     )
-                except RuntimeError:
-                    is_complete = False
-                    break
-            else:
-                raise ValueError(f"Unsupported gate type: {gate.type}") 
+                    
+                else:
+                    raise ValueError(f"Unsupported gate type: {gate.type}")
+            except RuntimeError:
+                is_complete = False
+                break
         
         if not is_complete:
             continue
 
-        print(f"(cycle = {state.cycle_count} cost = {state.total_cost}) Topological Order {i}:", topo_order)
+        # print(f"(cycle = {state.cycle_count} cost = {state.total_cost}) Topological Order {i}:", topo_order)
 
         if state.cycle_count < min_cycle:
             min_cycle = state.cycle_count

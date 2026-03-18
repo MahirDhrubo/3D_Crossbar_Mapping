@@ -44,9 +44,16 @@ class MappingState:
     
     def _count_copy_cycle(self, src: Coordinate, dest: Coordinate) -> int:
         return 2 if src[1] == dest[1] else 3
+    
+    def get_new_column_on_row(self, row: int) -> int:
+        if (self.tail_x[row] >= self.config.total_columns):
+            return - 1
+        
+        self.tail_x[row] += 1
+        return self.tail_x[row] - 1
 
     def get_remaining_columns_on_row(self, row: int) -> int:
-        return self.config.total_columns - self.tail_x[row] - 1
+        return self.config.total_columns - self.tail_x[row]
     
     def get_any_location_of_net(self, net: str) -> Coordinate:
         #returns none if net not found
@@ -70,13 +77,15 @@ class MappingState:
         # copy from same row -> 2 cycles (not, not)
         # copy from different row -> 3 cycles (not, and, not)
         
-        return 2 if self.has_net_on_row(net, dest[1]) else 3
+        #return 2 if self.has_net_on_row(net, dest[1]) else 3
+        return 1
 
 
     def copy_net(self, net: str, src: Coordinate, dest: Coordinate) -> None:
         self._put_net(net, dest)
 
-        self._increment_cycle(self._count_copy_cycle(src, dest))
+        # self._increment_cycle(self._count_copy_cycle(src, dest))
+        self._increment_cycle()
         self.ops.append(Operation(
             type=Operation_type.COPY,
             net=net,
@@ -88,7 +97,7 @@ class MappingState:
     def write_net(self, net: str, location: Coordinate) -> None:
         self._put_net(net, location)
         self.number_of_writes += 1
-        self._increment_cycle()
+        #self._increment_cycle()
         self.ops.append(Operation(
             type=Operation_type.WRITE,
             net=net,
@@ -124,22 +133,32 @@ class MappingState:
             cycle=self.cycle_count
         ))
 
-    def is_loc_allowed(self, location: Coordinate) -> bool:
-        # Check if the location is within the bounds of the grid
+    def is_forbidden(self, location: Coordinate) -> bool:
+        # Check if the location is forbidden for placement
         if not (0 <= location[0] < self.config.total_columns and 0 <= location[1] < self.config.total_rows):
-            return False
+            return True
 
         if location in self.primary_input_locations.values():
-            return False
+            return True
 
         if location in self.primary_output_locations.values():
+            return True
+
+        return False
+
+    def is_loc_allowed(self, location: Coordinate) -> bool:
+        if self.is_forbidden(location):
             return False
-        
+
         if self.uses_left.get(self.location_to_net.get(location), 0) != 0:
             return False
 
         return True
-    
-    def is_net_replacable(self, net:str) -> bool:
-        # A net is replacable if it has no more uses left or has multiple copies
-        return self.copy_count.get(net, 0) > 0
+
+    def is_net_replacable(self, location: Coordinate) -> bool:
+        if self.is_forbidden(location):
+            return False
+
+        # A net is replacable if it has multiple copies
+        net = self.location_to_net.get(location)
+        return len(self.net_location.get(net, set())) > 1
