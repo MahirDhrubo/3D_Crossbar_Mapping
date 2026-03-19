@@ -3,13 +3,15 @@ from typing import Set, List, Dict
 def nor_row_cost(
         new_columns,
         copies,
+        cell_replaced,
         future_misalignment_cost,
-        alpha=1.0,
+        alpha=0.0,
         beta=1.0,
-        gamma=1.0
+        gamma=1.0,
+        delta=2.0
     ) -> float:
-    
-    return (alpha * new_columns) + (beta * copies) + (gamma * future_misalignment_cost)
+
+    return (alpha * new_columns) + (beta * copies) + (gamma * future_misalignment_cost) + (delta * cell_replaced)
 
 def and_column_cost(
         copies,

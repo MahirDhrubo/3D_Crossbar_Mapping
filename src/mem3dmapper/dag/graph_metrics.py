@@ -1,5 +1,6 @@
+import random
 from collections import deque
-from typing import Dict
+from typing import Dict, Iterator, List, Optional
 from scipy.optimize import linear_sum_assignment
 
 from mem3dmapper.netlist.types import Netlist
@@ -37,19 +38,122 @@ def topo_sort(adj: Dict[int, set[int]]):
 
     return topo_order
 
+def all_topo_orders(adj: Dict[int, set[int]], limit: Optional[int] = None) -> Iterator[List[int]]:
+    """
+    Generate all possible topological orders for the DAG `adj`.
+
+    Warning: number of orders can be exponential. Use `limit` to stop early.
+
+    Args:
+        adj: adjacency list mapping node -> set(neighbors)
+        limit: optional maximum number of orders to produce
+
+    Yields:
+        lists representing topological orders (each is a new list).
+    """
+    n = len(adj)
+    # compute initial in-degrees
+    in_degree = {u: 0 for u in adj}
+    for u in adj:
+        for v in adj[u]:
+            in_degree[v] += 1
+
+    zeros = [u for u in adj if in_degree[u] == 0]
+    count = 0
+
+    def backtrack(order: List[int], zeros_list: List[int]):
+        nonlocal count
+        if limit is not None and count >= limit:
+            return
+        if len(order) == n:
+            count += 1
+            yield list(order)
+            return
+
+        # iterate deterministically over available zero-indegree nodes
+        for u in sorted(zeros_list):
+            order.append(u)
+
+            # prepare next zeros: remove u from current zeros
+            next_zeros = [x for x in zeros_list if x != u]
+
+            # decrement in-degrees for all neighbors of u and track them for restoration
+            affected = []
+            newly_zero = []
+            for v in adj[u]:
+                in_degree[v] -= 1
+                affected.append(v)
+                if in_degree[v] == 0:
+                    next_zeros.append(v)
+                    newly_zero.append(v)
+
+            # recurse
+            yield from backtrack(order, next_zeros)
+
+            # backtrack: restore in-degrees for all affected neighbors
+            for v in affected:
+                in_degree[v] += 1
+
+            order.pop()
+
+            if limit is not None and count >= limit:
+                return
+
+    yield from backtrack([], zeros)
+
+def _random_topo_order(adj: Dict[int, set[int]], rng: random.Random) -> List[int]:
+    """One randomized Kahn run: pick a zero-indegree node uniformly at random."""
+    in_degree = {u: 0 for u in adj}
+    for u in adj:
+        for v in adj[u]:
+            in_degree[v] += 1
+
+    zeros = [u for u in adj if in_degree[u] == 0]
+    order: List[int] = []
+
+    while zeros:
+        u = rng.choice(zeros)
+        zeros.remove(u)
+        order.append(u)
+        for v in adj[u]:
+            in_degree[v] -= 1
+            if in_degree[v] == 0:
+                zeros.append(v)
+
+    if len(order) != len(adj):
+        raise ValueError("Graph is not a DAG; topological sort not possible.")
+    return order
+
+def sample_topo_orders(adj: Dict[int, set[int]], n: int, seed: Optional[int] = None, max_attempts: int = 10000) -> Iterator[List[int]]:
+    """
+    Yield up to `n` distinct random topological orders (deterministic with `seed`).
+    Stops early if max_attempts are exhausted.
+    """
+    rng = random.Random(seed)
+    seen = set()
+    attempts = 0
+    while len(seen) < n and attempts < max_attempts:
+        attempts += 1
+        order = tuple(_random_topo_order(adj, rng))
+        if order in seen:
+            continue
+        seen.add(order)
+        yield list(order)
+
 def compute_depths(parents: Dict[int, set[int]], topo_order: list[int]) -> Dict[int, int]:
     """
     Compute the depth of each gate in a DAG based on its parent gates.
     
     """
 
-    gate_depths = {}
+    gate_depths: Dict[int, int] = {}
 
     for gid in topo_order:
-        if not parents[gid]:
+        pset = parents.get(gid, set())
+        if not pset:
             gate_depths[gid] = 0
         else:
-            gate_depths[gid] = 1 + max(gate_depths[p] for p in parents[gid])
+            gate_depths[gid] = 1 + max(gate_depths.get(p, 0) for p in pset)
 
     return gate_depths
 

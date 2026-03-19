@@ -20,6 +20,9 @@ def validate_mapping(netlist: Netlist, state: MappingState) -> None:
         MappingValidationError: If any primary input or output net is not mapped.
     """
     location = state.net_location
+    for net in netlist.primary_inputs:
+        if net not in location or not location[net]:
+            raise MappingValidationError(f"Primary input net '{net}' is not mapped to any location.")
 
     for net in netlist.primary_outputs:
         if net not in location or not location[net]:
