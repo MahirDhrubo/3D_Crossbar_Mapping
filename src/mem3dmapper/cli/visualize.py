@@ -58,7 +58,7 @@ def _as_coord(xy: Any) -> Coordinate:
 
 def load_ops(path: str) -> List[Operation]:
     with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+        data = json.load(f).get("execution")
     ops: List[Operation] = []
     for d in data:
         op = Operation(

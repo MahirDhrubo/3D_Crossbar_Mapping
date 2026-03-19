@@ -1,12 +1,16 @@
 from enum import Enum
+from collections import Counter
 import json
 
 from mem3dmapper.mapping.state import MappingState
+from mem3dmapper.mapping.types import MappingConfig
 from mem3dmapper.netlist.parser import parse_netlist
 from mem3dmapper.dag.build import build_DAG
 from mem3dmapper.dag.visualize import write_dot, render_graphviz
 from mem3dmapper.mapping.heuristic import map_netlist
 from mem3dmapper.mapping.validator import validate_mapping
+
+file_name = "adder64"
 
 class EnumEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -16,7 +20,38 @@ class EnumEncoder(json.JSONEncoder):
             return obj.__dict__
         return super().default(obj)
 
-netlist = parse_netlist("data/netlists/dot4_4bit_nor.blif")
+def mapping_with_arbitrary_rows(start_row, end_row, total_columns):
+    for row in range(start_row, end_row + 1):
+        try:
+            mapper(total_rows=row, total_columns=total_columns)
+        except Exception as e:
+            print(f"Error occurred while mapping {row}x{total_columns}: {e}")
+
+def mapper(total_rows, total_columns):
+    config = MappingConfig(total_rows=total_rows, total_columns=total_columns)
+    print(f"Grid size {config.total_rows}x{config.total_columns}")
+
+    state: MappingState = map_netlist(netlist=netlist, config=config)
+
+    if state is None:
+        print(f"Mapping failed for grid size {config.total_rows}x{config.total_columns}")
+        raise Exception(f"Mapping failed")
+
+    print(f"Grid size {state.config.total_rows}x{state.config.total_columns}  Mapping completed with total cost: {state.total_cost} and total cycles: {state.cycle_count}")
+    validate_mapping(netlist, state)
+
+    execution = state.ops
+    operations_count = Counter(op.type.name for op in execution)
+    operations_count["total"] = sum(operations_count.values()) - operations_count["WRITE"]
+    json_string = {
+        "execution": execution,
+        "operations_count": operations_count
+    }
+    with open(f"data/json/{file_name}_{state.config.total_rows}x{state.config.total_columns}.json", "w") as f:
+        json.dump(json_string, f, indent=4, cls=EnumEncoder)
+
+
+netlist = parse_netlist(f"data/netlists/adder_netlist/{file_name}.blif")
 print(netlist.name, len(netlist.gates), "gates")
 
 parents, children = build_DAG(netlist)
@@ -25,16 +60,11 @@ parents, children = build_DAG(netlist)
 
 
 ### view DAG as DOT file
-dot_file = write_dot("data/runs/dot4_4bit_nor.dot", netlist, parents, children)
-render_graphviz(dot_file, "data/runs/dot4_4bit_nor.png", fmt="png")
+if len(netlist.gates) <= 500:
+    dot_file = write_dot(f"data/runs/{file_name}.dot", netlist, parents, children)
+    render_graphviz(dot_file, f"data/runs/{file_name}.png", fmt="png")
 
-state: MappingState = map_netlist(netlist=netlist)
-print(f"Mapping completed with total cost: {state.total_cost} and total cycles: {state.cycle_count}")
-validate_mapping(netlist, state)
-
-execution = state.ops
-
-with open("data/json/dot4_4bit_nor.json", "w") as f:
-    json.dump(execution, f, indent=4, cls=EnumEncoder)
+# mapping_with_arbitrary_rows(start_row=3, end_row=20, total_columns=128)
+mapper(total_rows=3, total_columns=128)
 
 
