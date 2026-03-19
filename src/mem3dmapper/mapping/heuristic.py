@@ -415,7 +415,8 @@ def map_netlist(netlist: Netlist) -> MappingState:
     best_order: List[int] = None
     min_cycle: int = float('inf')
     gates_by_id: Dict[int, Gate] = {g.gid: g for g in netlist.gates}
-    N = 3000
+
+    N = 1000
     SEED = 42
     # for i in range(1):
         # topo_order = [1, 2, 3, 4, 5, 6, 9, 0, 7, 8]

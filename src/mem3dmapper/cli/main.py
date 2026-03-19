@@ -1,6 +1,7 @@
 from enum import Enum
 import json
 
+from mem3dmapper.mapping.alternate_mapper import map_netlist_beam_search
 from mem3dmapper.mapping.state import MappingState
 from mem3dmapper.netlist.parser import parse_netlist
 from mem3dmapper.dag.build import build_DAG
@@ -28,13 +29,14 @@ parents, children = build_DAG(netlist)
 dot_file = write_dot("data/runs/dot4_4bit.dot", netlist, parents, children)
 render_graphviz(dot_file, "data/runs/dot4_4bit.png", fmt="png")
 
+solve_result = map_netlist_beam_search(netlist=netlist)
+
 state: MappingState = map_netlist(netlist=netlist)
 print(f"Mapping completed with total cost: {state.total_cost} and total cycles: {state.cycle_count}")
 validate_mapping(netlist, state)
 
 execution = state.ops
-
-with open("data/json/dot4_4bit.json", "w") as f:
+with open("data/json/dot4_4bit_mapping.json", "w") as f:
     json.dump(execution, f, indent=4, cls=EnumEncoder)
 
 
