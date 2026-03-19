@@ -16,7 +16,7 @@ class EnumEncoder(json.JSONEncoder):
             return obj.__dict__
         return super().default(obj)
 
-netlist = parse_netlist("data/netlists/dot4_4bit_nor.blif")
+netlist = parse_netlist("data/netlists/dot4_4bit.blif")
 print(netlist.name, len(netlist.gates), "gates")
 
 parents, children = build_DAG(netlist)
@@ -25,8 +25,8 @@ parents, children = build_DAG(netlist)
 
 
 ### view DAG as DOT file
-dot_file = write_dot("data/runs/dot4_4bit_nor.dot", netlist, parents, children)
-render_graphviz(dot_file, "data/runs/dot4_4bit_nor.png", fmt="png")
+dot_file = write_dot("data/runs/dot4_4bit.dot", netlist, parents, children)
+render_graphviz(dot_file, "data/runs/dot4_4bit.png", fmt="png")
 
 state: MappingState = map_netlist(netlist=netlist)
 print(f"Mapping completed with total cost: {state.total_cost} and total cycles: {state.cycle_count}")
@@ -34,7 +34,7 @@ validate_mapping(netlist, state)
 
 execution = state.ops
 
-with open("data/json/dot4_4bit_nor_mapping.json", "w") as f:
+with open("data/json/dot4_4bit.json", "w") as f:
     json.dump(execution, f, indent=4, cls=EnumEncoder)
 
 
