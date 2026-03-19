@@ -61,8 +61,7 @@ def _get_input_columns(allowed_cells: List[Coordinate], replaceable_cells: List[
 
 def _heuristic_choose_nor_inv_row(
         state: MappingState,
-        inputs: List[str],
-        output: str,
+        gate: Gate,
         cluster_id_map: Dict[str, int],
         row_fanout: Dict[str, int]
 ) -> NorInvPlacementPlan:
@@ -72,16 +71,20 @@ def _heuristic_choose_nor_inv_row(
     best_row = -1
     best_placement = None
     best_cost = float('inf')
+    
+    inputs = gate.inputs
+    output = gate.output
 
     for row in range(state.config.total_rows):
         missing = 0
         missing_inputs = []
+
         for s in inputs:
-            if not state.has_net_on_row(s, row):
+            if (gate.type == GateType.NOR and not state.has_net_on_row(s, row)) or (gate.type == GateType.NOT and state.net_location.get(s) is None):
                 missing += 1
                 missing_inputs.append(s)
 
-        # calculateing number of columns that can be overwritten
+            # calculating number of columns that can be overwritten
         allowed_cells: List[Coordinate] = []
         replaceable_cells: List[Coordinate] = []
         for (x,y), net in state.location_to_net.items():
@@ -175,8 +178,7 @@ def _map_nor_inv(
     """
     placement, cost = _heuristic_choose_nor_inv_row(
         state,
-        gate.inputs,
-        gate.output,
+        gate,
         cluster_id_map,
         row_fanout
     )
@@ -412,7 +414,7 @@ def map_netlist(netlist: Netlist) -> MappingState:
     best_order: List[int] = None
     min_cycle: int = float('inf')
     gates_by_id: Dict[int, Gate] = {g.gid: g for g in netlist.gates}
-    N = 10
+    N = 3000
     SEED = 42
     # for i in range(1):
         # topo_order = [1, 2, 3, 4, 5, 6, 9, 0, 7, 8]
@@ -459,7 +461,9 @@ def map_netlist(netlist: Netlist) -> MappingState:
         
         if not is_complete:
             continue
-
+        
+        if i % 25 == 0:
+            print(f"Completed {i} topological orders. Current order cost: {state.total_cost}, cycles: {state.cycle_count}")
         # print(f"(cycle = {state.cycle_count} cost = {state.total_cost}) Topological Order {i}:", topo_order)
 
         if state.cycle_count < min_cycle:

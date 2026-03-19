@@ -34,7 +34,7 @@ validate_mapping(netlist, state)
 
 execution = state.ops
 
-with open("data/json/dot4_4bit_nor_mapping.json", "w") as f:
+with open("data/json/dot4_4bit_nor.json", "w") as f:
     json.dump(execution, f, indent=4, cls=EnumEncoder)
 
 
