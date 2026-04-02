@@ -47,7 +47,7 @@ class MappingState:
     
     def get_new_column_on_row(self, row: int) -> int:
         if (self.tail_x[row] >= self.config.total_columns):
-            return - 1
+            return -1
         
         self.tail_x[row] += 1
         return self.tail_x[row] - 1
@@ -138,15 +138,15 @@ class MappingState:
         if not (0 <= location[0] < self.config.total_columns and 0 <= location[1] < self.config.total_rows):
             return True
 
-        if location in self.primary_input_locations.values():
-            return True
+        # if location in self.primary_input_locations.values():
+        #     return True
 
         if location in self.primary_output_locations.values():
             return True
 
         return False
 
-    def is_loc_allowed(self, location: Coordinate) -> bool:
+    def is_location_free(self, location: Coordinate) -> bool:
         if self.is_forbidden(location):
             return False
 

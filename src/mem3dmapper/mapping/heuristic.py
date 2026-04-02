@@ -61,8 +61,7 @@ def _get_input_columns(allowed_cells: List[Coordinate], replaceable_cells: List[
 
 def _heuristic_choose_nor_inv_row(
         state: MappingState,
-        inputs: List[str],
-        output: str,
+        gate: Gate,
         cluster_id_map: Dict[str, int],
         row_fanout: Dict[str, int]
 ) -> NorInvPlacementPlan:
@@ -72,27 +71,34 @@ def _heuristic_choose_nor_inv_row(
     best_row = -1
     best_placement = None
     best_cost = float('inf')
+    
+    inputs = gate.inputs
+    output = gate.output
 
     for row in range(state.config.total_rows):
         missing = 0
         missing_inputs = []
+
         for s in inputs:
-            if not state.has_net_on_row(s, row):
+            if (gate.type == GateType.NOR and not state.has_net_on_row(s, row)) or (gate.type == GateType.NOT and state.net_location.get(s) is None):
                 missing += 1
                 missing_inputs.append(s)
 
-        # calculateing number of columns that can be overwritten
-        allowed_cells: List[Coordinate] = []
+            # calculating number of columns that can be overwritten
+        free_cells: List[Coordinate] = []
         replaceable_cells: List[Coordinate] = []
-        for (x,y), net in state.location_to_net.items():
+        # for (x,y), net in state.location_to_net.items():
+        for x in range(0, state.tail_x[row]):
+            y = row
+            net = state.location_to_net.get((x,y))
             if y == row and net not in inputs:
-                if state.is_loc_allowed((x,y)):
-                    allowed_cells.append((x,y))
+                if state.is_location_free((x,y)):
+                    free_cells.append((x,y))
 
                 elif state.is_net_replacable((x,y)):
                     replaceable_cells.append((x,y))
 
-        new_columns = max(missing + 1 - len(allowed_cells), 0)
+        new_columns = max(missing + 1 - len(free_cells), 0)
 
         if new_columns > state.get_remaining_columns_on_row(row) + len(replaceable_cells):
             continue
@@ -129,23 +135,21 @@ def _heuristic_choose_nor_inv_row(
             input_columns = []
             column_count = 0
             total_columns_needed = len(missing_inputs) + 1 # +1 for the output
-            for (x,y) in allowed_cells:
+            for (x,y) in free_cells:
                 if column_count < total_columns_needed: # +1 for the output
                     input_columns.append(x)
                     column_count += 1
                 else:
                     break
-            
+                        
+            tail_column = state.tail_x[row]
             for _ in range(column_count, total_columns_needed):
-                if column_count < total_columns_needed:
-                    col = state.get_new_column_on_row(row)
-                    if col != -1:
-                        input_columns.append(col)
-                    else:
-                        break
+                if tail_column < state.config.total_columns:
+                    input_columns.append(tail_column)
+                    tail_column += 1
                 else:
                     break
-            
+                        
             for (x,y) in selected_replacable_cells:
                 if column_count < total_columns_needed:
                     input_columns.append(x)
@@ -175,8 +179,7 @@ def _map_nor_inv(
     """
     placement, cost = _heuristic_choose_nor_inv_row(
         state,
-        gate.inputs,
-        gate.output,
+        gate,
         cluster_id_map,
         row_fanout
     )
@@ -185,6 +188,7 @@ def _map_nor_inv(
         raise RuntimeError(f"No valid row found for NOR/INV gate with output {gate.output}")
     
     row = placement.row
+    last_used_column = -1
     for col, net in zip(placement.placement_columns, placement.placable_nets):
         dest = (col, row)
         src = state.get_any_location_of_net(net)
@@ -194,6 +198,7 @@ def _map_nor_inv(
             state.primary_input_locations[net] = dest
         else:
             state.copy_net(net, src, dest)
+        last_used_column = max(last_used_column, col)
     
     inputs_locations: List[Coordinate] = []
     for inp in gate.inputs:
@@ -228,6 +233,7 @@ def _map_nor_inv(
 
     # output placement
     out_location: Coordinate = (placement.output_column, placement.row)
+    last_used_column = max(last_used_column, placement.output_column)
     # for (x, y), net in state.location_to_net.items():
     #     if state.is_loc_allowed((x,y)) and y == row and net not in gate.inputs:
     #         out_location = (x, y)
@@ -252,6 +258,8 @@ def _map_nor_inv(
 
     if gate.output in state.primary_outputs:
         state.primary_output_locations[gate.output] = out_location
+    
+    state.tail_x[row] = max(state.tail_x[row], last_used_column + 1)
 
     state.total_cost += cost
 
@@ -293,7 +301,7 @@ def _heuristic_AND_placement(
             output_cell_candidates = [row_start - 1, row_start + input_length]
 
             for output_cell_row in output_cell_candidates:
-                if not state.is_loc_allowed((col, output_cell_row)):
+                if not state.is_location_free((col, output_cell_row)):
                     continue
 
                 net = state.location_to_net.get((col, output_cell_row))
@@ -303,7 +311,7 @@ def _heuristic_AND_placement(
                 window_available = True
                 for c in range(input_length):
                     cell_net = state.location_to_net.get((col, row_start + c))
-                    if cell_net not in inputs and (state.uses_left.get(cell_net, 0) != 0 or not state.is_loc_allowed((col, row_start + c)) or net in state.primary_outputs):
+                    if cell_net not in inputs and (state.uses_left.get(cell_net, 0) != 0 or not state.is_location_free((col, row_start + c)) or net in state.primary_outputs):
                         window_available = False
                         break
                 
@@ -369,14 +377,14 @@ def _map_and_gate(
                 src = state.get_any_location_of_net(inp)
             dest = (column, input_row_start + i)
 
-            if state.tail_x[input_row_start + i] <= column:
-                state.tail_x[input_row_start + i] = column + 1
-
             if src is None:
                 state.write_net(inp, dest)
                 state.primary_input_locations[inp] = dest
             else:
                 state.copy_net(inp, src, dest)
+
+            state.tail_x[input_row_start + i] = max(state.tail_x[input_row_start + i], column + 1)
+
 
     out_location = (column, output_cell_row)
     state.execute_net(
@@ -391,8 +399,7 @@ def _map_and_gate(
         state.primary_output_locations[gate.output] = out_location
 
     state.total_cost += cost
-    if state.tail_x[output_cell_row] <= column:
-        state.tail_x[output_cell_row] = column + 1
+    state.tail_x[output_cell_row] = max(state.tail_x[output_cell_row], column + 1)
 
     if state.row_cluster[output_cell_row] is None:
         state.row_cluster[output_cell_row] = cluster_id_map.get(gate.output, 0)
@@ -401,72 +408,211 @@ def _map_and_gate(
         state.uses_left[inp] -= 1    
 
 
-def map_netlist(netlist: Netlist) -> MappingState:
+# def map_netlist(netlist: Netlist) -> MappingState:
+#     if netlist.producers is None or netlist.consumers is None:
+#         netlist.build_gate_map()
+
+#     parents, children = build_DAG(netlist)
+#     #topo_order = topo_sort(children)
+#     best_cost = float('inf')
+#     best_state: MappingState = None
+#     best_order: List[int] = None
+#     min_cycle: int = float('inf')
+#     gates_by_id: Dict[int, Gate] = {g.gid: g for g in netlist.gates}
+
+#     N = 1500
+#     SEED = 42
+#     # for i in range(1):
+#         # topo_order = [1, 2, 3, 4, 5, 6, 9, 0, 7, 8]
+#         # topo_order = [3, 2, 4, 9, 0, 1, 5, 6, 7, 8]
+#         # topo_order = [14, 0, 1, 13, 25, 26, 3, 2, 15, 16, 4, 27, 17, 18, 19, 5, 39, 20, 6, 40, 28, 12, 24, 22, 30, 7, 8, 29, 21, 35, 9, 31, 33, 23, 36, 32, 10, 37, 11, 38, 34]
+#     for i, topo_order in enumerate(sample_topo_orders(children, n=N, seed=SEED), start=1):
+#     # for i, topo_order in enumerate(all_topo_orders(children, limit=N), start=1):
+#         config = MappingConfig()
+#         state = MappingState(config=config)
+#         state.init_params(netlist.primary_outputs)
+#         # print(topo_order)
+#         is_complete = True
+#         gate_depths = compute_depths(parents, topo_order)
+
+#         total_fanout, row_fanout, col_fanout = _compute_fanout(netlist)
+#         cluster_id_map = _build_cluster_id_map(netlist, gate_depths, cluster_window=state.config.cluster_window)
+#         state.uses_left = dict(total_fanout)
+
+#         is_ok = True
+
+#         for gid in topo_order:
+#             gate = gates_by_id[gid]
+#             try:
+#                 if gate.type == GateType.NOR or gate.type == GateType.NOT:
+#                     _map_nor_inv(
+#                         state=state,
+#                         gate=gate,
+#                         cluster_id_map=cluster_id_map,
+#                         row_fanout=row_fanout
+#                     )
+#                 elif gate.type == GateType.AND:
+#                     _map_and_gate(
+#                         state=state,
+#                         gate=gate,
+#                         cluster_id_map=cluster_id_map,
+#                         row_fanout=row_fanout.get(gate.output, 0)
+#                     )
+                    
+#                 else:
+#                     raise ValueError(f"Unsupported gate type: {gate.type}")
+#             except RuntimeError:
+#                 is_complete = False
+#                 break
+        
+#         if not is_complete:
+#             if i % 25 == 0:
+#                 print(f"Failed {i} topological orders.")
+#             continue
+        
+#         if i % 25 == 0:
+#             print(f"Completed {i} topological orders. Current order cost: {state.total_cost}, cycles: {state.cycle_count}")
+#         # print(f"(cycle = {state.cycle_count} cost = {state.total_cost}) Topological Order {i}:", topo_order)
+
+#         if state.cycle_count < min_cycle:
+#             min_cycle = state.cycle_count
+#             best_cost = state.total_cost
+#             best_state = state
+#             best_order = topo_order
+#     # print([gates_by_id.get(gid).output for gid in best_order])
+#     print(best_order)
+#     return best_state
+
+# ...existing code...
+import os
+import concurrent.futures
+from typing import Any
+# ...existing code...
+
+def _process_topo_order(topo_order: List[int], netlist: Netlist, config: MappingConfig) -> Optional[Tuple[MappingState, List[int]]]:
+    """
+    Worker function to evaluate a single topo_order. Returns (state, topo_order) on success,
+    or None if mapping failed for that order.
+    """
+    state = MappingState(config=config)
+    state.init_params(netlist.primary_outputs)
+
+    gate_depths = compute_depths(*build_DAG(netlist)) if False else None  # unused here
+    gates_by_id: Dict[int, Gate] = {g.gid: g for g in netlist.gates}
+
+    total_fanout, row_fanout, col_fanout = _compute_fanout(netlist)
+    gate_depths = compute_depths(*build_DAG(netlist))  # compute depths once per worker
+    cluster_id_map = _build_cluster_id_map(netlist, gate_depths, cluster_window=state.config.cluster_window)
+    state.uses_left = dict(total_fanout)
+
+    try:
+        for gid in topo_order:
+            gate = gates_by_id[gid]
+            if gate.type == GateType.NOR or gate.type == GateType.NOT:
+                _map_nor_inv(
+                    state=state,
+                    gate=gate,
+                    cluster_id_map=cluster_id_map,
+                    row_fanout=row_fanout
+                )
+            elif gate.type == GateType.AND:
+                _map_and_gate(
+                    state=state,
+                    gate=gate,
+                    cluster_id_map=cluster_id_map,
+                    row_fanout=row_fanout.get(gate.output, 0)
+                )
+            else:
+                raise ValueError(f"Unsupported gate type: {gate.type}")
+    except RuntimeError:
+        return None
+
+    return state, topo_order
+
+def map_netlist(netlist: Netlist, config: MappingConfig) -> MappingState:
     if netlist.producers is None or netlist.consumers is None:
         netlist.build_gate_map()
 
     parents, children = build_DAG(netlist)
-    #topo_order = topo_sort(children)
     best_cost = float('inf')
     best_state: MappingState = None
     best_order: List[int] = None
     min_cycle: int = float('inf')
     gates_by_id: Dict[int, Gate] = {g.gid: g for g in netlist.gates}
-    N = 10
+
+    N = 1500
     SEED = 42
-    # for i in range(1):
-        # topo_order = [1, 2, 3, 4, 5, 6, 9, 0, 7, 8]
-        # topo_order = [3, 2, 4, 9, 0, 1, 5, 6, 7, 8]
-        # topo_order = [14, 0, 1, 13, 25, 26, 3, 2, 15, 16, 4, 27, 17, 18, 19, 5, 39, 20, 6, 40, 28, 12, 24, 22, 30, 7, 8, 29, 21, 35, 9, 31, 33, 23, 36, 32, 10, 37, 11, 38, 34]
-    for i, topo_order in enumerate(sample_topo_orders(children, n=N, seed=SEED), start=1):
-    # for i, topo_order in enumerate(all_topo_orders(children, limit=N), start=1):
-        config = MappingConfig()
-        state = MappingState(config=config)
-        state.init_params(netlist.primary_outputs)
-        # print(topo_order)
-        is_complete = True
-        gate_depths = compute_depths(parents, topo_order)
 
-        total_fanout, row_fanout, col_fanout = _compute_fanout(netlist)
-        cluster_id_map = _build_cluster_id_map(netlist, gate_depths, cluster_window=state.config.cluster_window)
-        state.uses_left = dict(total_fanout)
+    # collect topo orders up front (sample_topo_orders yields N orders)
+    topo_orders = list(sample_topo_orders(children, n=N, seed=SEED))
 
-        is_ok = True
+    # try parallel execution using processes
+    try:
+        max_workers = min(len(topo_orders), max(1, (os.cpu_count() or 1)))
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as ex:
+            futures = {ex.submit(_process_topo_order, topo, netlist, config): idx for idx, topo in enumerate(topo_orders, start=1)}
+            for fut in concurrent.futures.as_completed(futures):
+                res = fut.result()
+                if res is None:
+                    continue
+                state, topo_order = res
+                # guard in case MappingState isn't fully picklable / transmitted as expected
+                try:
+                    if state.cycle_count < min_cycle or (state.cycle_count == min_cycle and state.total_cost < best_cost):
+                        min_cycle = state.cycle_count
+                        best_cost = state.total_cost
+                        best_state = state
+                        best_order = topo_order
+                except Exception:
+                    # If state cannot be inspected reliably, skip it
+                    continue
 
-        for gid in topo_order:
-            gate = gates_by_id[gid]
+    except Exception:
+        # fallback to sequential loop if parallel execution fails (pickling issues, etc.)
+        # for i in range(1):
+            # topo_order = [0, 3, 2, 28, 4, 5, 6, 1, 30, 7, 9, 8, 29, 10, 33, 34, 31, 12, 32, 35, 11, 13, 16, 15, 36, 17, 21, 14, 18, 22, 20, 19, 24, 23, 25, 26, 27]
+        for i, topo_order in enumerate(topo_orders, start=1):
+            state = MappingState(config=config)
+            state.init_params(netlist.primary_outputs)
+            gate_depths = compute_depths(parents, topo_order)
+            total_fanout, row_fanout, col_fanout = _compute_fanout(netlist)
+            cluster_id_map = _build_cluster_id_map(netlist, gate_depths, cluster_window=state.config.cluster_window)
+            state.uses_left = dict(total_fanout)
+
+            is_complete = True
             try:
-                if gate.type == GateType.NOR or gate.type == GateType.NOT:
-                    _map_nor_inv(
-                        state=state,
-                        gate=gate,
-                        cluster_id_map=cluster_id_map,
-                        row_fanout=row_fanout
-                    )
-                elif gate.type == GateType.AND:
-                    _map_and_gate(
-                        state=state,
-                        gate=gate,
-                        cluster_id_map=cluster_id_map,
-                        row_fanout=row_fanout.get(gate.output, 0)
-                    )
-                    
-                else:
-                    raise ValueError(f"Unsupported gate type: {gate.type}")
+                for gid in topo_order:
+                    gate = gates_by_id[gid]
+                    if gate.type == GateType.NOR or gate.type == GateType.NOT:
+                        _map_nor_inv(
+                            state=state,
+                            gate=gate,
+                            cluster_id_map=cluster_id_map,
+                            row_fanout=row_fanout
+                        )
+                    elif gate.type == GateType.AND:
+                        _map_and_gate(
+                            state=state,
+                            gate=gate,
+                            cluster_id_map=cluster_id_map,
+                            row_fanout=row_fanout.get(gate.output, 0)
+                        )
             except RuntimeError:
                 is_complete = False
-                break
-        
-        if not is_complete:
-            continue
 
-        # print(f"(cycle = {state.cycle_count} cost = {state.total_cost}) Topological Order {i}:", topo_order)
+            if not is_complete:
+                if i % 25 == 0:
+                    print(f"Failed {i} topological orders.")
+                continue
 
-        if state.cycle_count < min_cycle:
-            min_cycle = state.cycle_count
-            best_cost = state.total_cost
-            best_state = state
-            best_order = topo_order
-    # print([gates_by_id.get(gid).output for gid in best_order])
-    print(best_order)
+            if i % 25 == 0:
+                print(f"Completed {i} topological orders. Current order cost: {state.total_cost}, cycles: {state.cycle_count}")
+
+            if state.cycle_count < min_cycle or (state.cycle_count == min_cycle and state.total_cost < best_cost):
+                min_cycle = state.cycle_count
+                best_cost = state.total_cost
+                best_state = state
+                best_order = topo_order
+
     return best_state
+# ...existing code...
