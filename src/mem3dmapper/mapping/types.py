@@ -23,15 +23,22 @@ class Operation:
 
     src: Optional[List[Coordinate]] = None # for input location (except write)
 
-@dataclass(frozen=True)
 class MappingConfig:
     total_rows: int = 6
     total_columns: int = 256
     cluster_window: int = 256
 
-    alpha: float = 1.0
-    beta: float = 1.0
-    gamma: float = 1.0
+    alpha: float
+    beta: float
+    gamma: float
+
+    def __init__(self, total_rows, total_columns, cluster_window = 50, alpha = 1.0, beta = 1.0, gamma = 1.0):
+        self.total_rows = total_rows
+        self.total_columns = total_columns
+        self.cluster_window = cluster_window
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
 
 @dataclass
 class AndPlacementPlan:

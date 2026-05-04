@@ -66,8 +66,11 @@ class MappingState:
         return None
 
     def has_net_on_row(self, net: str, row: int) -> bool:
-        return any(y == row for (x, y) in self.net_location.get(net, set()))
-    
+        for col in range(self.tail_x[row]):
+            if self.location_to_net.get((col, row)) == net:
+                return True
+        return False
+
     def copy_cost_at(self, net: str, dest: Coordinate) -> int:
         if self.location_to_net.get(dest) == net:
             return 0
@@ -138,8 +141,8 @@ class MappingState:
         if not (0 <= location[0] < self.config.total_columns and 0 <= location[1] < self.config.total_rows):
             return True
 
-        # if location in self.primary_input_locations.values():
-        #     return True
+        if location in self.primary_input_locations.values():
+            return True
 
         if location in self.primary_output_locations.values():
             return True

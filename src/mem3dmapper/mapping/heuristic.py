@@ -127,7 +127,10 @@ def _heuristic_choose_nor_inv_row(
             new_columns=new_columns,
             copies= missing,
             cell_replaced=total_replacement_cost,
-            future_misalignment_cost=future_misalignment_cost
+            future_misalignment_cost=future_misalignment_cost,
+            alpha=state.config.alpha,
+            beta=state.config.beta,
+            gamma=state.config.gamma
         )
 
         if total_cost < best_cost:
@@ -165,6 +168,59 @@ def _heuristic_choose_nor_inv_row(
             )
 
     return best_placement, best_cost
+
+def _map_nor_inv_2D(
+        *,
+        state: MappingState,
+        gate: Gate,
+        row: int
+) -> int:
+    try:
+        inputs = gate.inputs
+        output = gate.output
+        done = False
+
+        while not done:
+            missing_inputs: List[str] = []
+            input_locations: List[Coordinate] = []
+            for s in inputs:
+                if not state.has_net_on_row(s, row):
+                    missing_inputs.append(s)
+                else:
+                    for (x,y) in state.net_location.get(s):
+                        if y == row:
+                            input_locations.append((x, y))
+                            break
+
+            if len(missing_inputs) + 1 > state.config.total_columns - state.tail_x[row]:
+                row += 1
+                state.tail_x.append(0)
+                state.config.total_rows += 1
+                continue
+
+            for inp in missing_inputs:
+                src = state.get_any_location_of_net(inp)
+                dest = (state.tail_x[row], row)
+                state.copy_net(inp, src, dest)
+                state.tail_x[row] += 1
+                input_locations.append(dest)
+            
+            out_location = (state.tail_x[row], row)
+            state.tail_x[row] += 1
+            state.execute_net(
+                net=gate.output,
+                location=out_location,
+                gateType=gate.type,
+                inputs=tuple(gate.inputs),
+                input_locations=input_locations
+            )
+            done = True
+
+    except Exception as e:
+        print(f"Error mapping 2D: {e}")
+        return -1
+
+    return row
     
 
 def _map_nor_inv(
@@ -330,7 +386,9 @@ def _heuristic_AND_placement(
 
                 total_cost = and_column_cost(
                     copies=placement_cost,
-                    future_misalignment_cost=future_misalignment_cost
+                    future_misalignment_cost=future_misalignment_cost,
+                    alpha=state.config.alpha,
+                    gamma=state.config.gamma
                 )
 
                 if total_cost < best_cost:
@@ -486,7 +544,7 @@ def _map_and_gate(
 # ...existing code...
 import os
 import concurrent.futures
-from typing import Any
+from typing import Any, Optional, Tuple
 # ...existing code...
 
 def _process_topo_order(topo_order: List[int], netlist: Netlist, config: MappingConfig) -> Optional[Tuple[MappingState, List[int]]]:
@@ -528,6 +586,117 @@ def _process_topo_order(topo_order: List[int], netlist: Netlist, config: Mapping
         return None
 
     return state, topo_order
+
+def _evaluate_topo_order_2D(topo_order: List[int], netlist: Netlist, config: MappingConfig) -> Optional[Tuple[int, float, List[int]]]:
+    """
+    Worker: run the 2D mapping for a single topo_order and return metrics:
+    (cycle_count, total_cost, topo_order) on success, or None on failure.
+    This avoids pickling MappingState back to the parent process.
+    """
+    try:
+        state = MappingState(config=config)
+        state.init_params(netlist.primary_outputs)
+        parents, _ = build_DAG(netlist)
+        gate_depths = compute_depths(parents, topo_order)
+        total_fanout, row_fanout, col_fanout = _compute_fanout(netlist)
+        cluster_id_map = _build_cluster_id_map(netlist, gate_depths, cluster_window=state.config.cluster_window)
+        state.uses_left = dict(total_fanout)
+
+        # place primary inputs at columns 0..n-1 in row 0
+        for idx, inp in enumerate(netlist.primary_inputs):
+            if idx >= state.config.total_columns:
+                return None
+            state.write_net(inp, (idx, 0))
+        state.tail_x[0] = len(netlist.primary_inputs) + 1
+
+        current_row = 0
+        gates_by_id: Dict[int, Gate] = {g.gid: g for g in netlist.gates}
+        for gid in topo_order:
+            gate = gates_by_id[gid]
+            if gate.type in (GateType.NOR, GateType.NOT):
+                current_row = _map_nor_inv_2D(state=state, gate=gate, row=current_row)
+                if current_row == -1:
+                    return None
+            else:
+                # the 2D mapper currently supports only NOR/NOT
+                return None
+
+        return state.cycle_count, state.total_cost, topo_order
+
+    except Exception:
+        return None
+
+
+def map_2D(netlist: Netlist, config: MappingConfig) -> MappingState:
+    """
+    Parallelized map_2D: sample topo orders, evaluate them in parallel (processes),
+    then re-run the best topo order sequentially to obtain the full MappingState object.
+    """
+    parents, children = build_DAG(netlist)
+    gates_by_id: Dict[int, Gate] = {g.gid: g for g in netlist.gates}
+
+    N = 1500
+    SEED = 42
+
+    topo_orders = list(sample_topo_orders(children, n=N, seed=SEED))
+
+    best_metrics: Tuple[int, float, List[int]] = (float('inf'), float('inf'), None)
+    best_order: Optional[List[int]] = None
+
+    # parallel evaluation - workers return only (cycle_count, total_cost, topo_order)
+    try:
+        max_workers = min(len(topo_orders), max(1, (os.cpu_count() or 1)))
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as ex:
+            futures = {ex.submit(_evaluate_topo_order_2D, topo, netlist, config): topo for topo in topo_orders}
+            for fut in concurrent.futures.as_completed(futures):
+                res = fut.result()
+                if res is None:
+                    continue
+                cycle_count, total_cost, topo = res
+                # prefer smaller cycle_count, tie-breaker by total_cost
+                if cycle_count < best_metrics[0] or (cycle_count == best_metrics[0] and total_cost < best_metrics[1]):
+                    best_metrics = (cycle_count, total_cost, topo)
+                    best_order = topo
+    except Exception:
+        # fallback to sequential evaluation if process-pool fails
+        for topo in topo_orders:
+            res = _evaluate_topo_order_2D(topo, netlist, config)
+            if res is None:
+                continue
+            cycle_count, total_cost, topo = res
+            if cycle_count < best_metrics[0] or (cycle_count == best_metrics[0] and total_cost < best_metrics[1]):
+                best_metrics = (cycle_count, total_cost, topo)
+                best_order = topo
+
+    if best_order is None:
+        # no successful mapping found
+        return None
+
+    # Re-run the best topo order sequentially to get the full MappingState (no pickling issues)
+    state = MappingState(config=config)
+    state.init_params(netlist.primary_outputs)
+    gate_depths = compute_depths(parents, best_order)
+    total_fanout, row_fanout, col_fanout = _compute_fanout(netlist)
+    cluster_id_map = _build_cluster_id_map(netlist, gate_depths, cluster_window=state.config.cluster_window)
+    state.uses_left = dict(total_fanout)
+
+    for idx, inp in enumerate(netlist.primary_inputs):
+        if idx >= state.config.total_columns:
+            raise ValueError(f"Input {inp} exceeds total columns")
+        state.write_net(inp, (idx, 0))
+    state.tail_x[0] = len(netlist.primary_inputs) + 1
+
+    current_row = 0
+    for gid in best_order:
+        gate = gates_by_id[gid]
+        if gate.type in (GateType.NOR, GateType.NOT):
+            current_row = _map_nor_inv_2D(state=state, gate=gate, row=current_row)
+            if current_row == -1:
+                raise RuntimeError("Failed to re-run best topo_order sequentially")
+        else:
+            raise ValueError(f"Unsupported gate type in final run: {gate.type}")
+
+    return state
 
 def map_netlist(netlist: Netlist, config: MappingConfig) -> MappingState:
     if netlist.producers is None or netlist.consumers is None:
@@ -615,4 +784,3 @@ def map_netlist(netlist: Netlist, config: MappingConfig) -> MappingState:
                 best_order = topo_order
 
     return best_state
-# ...existing code...

@@ -5,22 +5,22 @@ def nor_row_cost(
         copies,
         cell_replaced,
         future_misalignment_cost,
-        alpha=0.0,
-        beta=1.0,
-        gamma=1.0,
+        alpha,
+        beta,
+        gamma,
         delta=2.0
     ) -> float:
 
-    return (alpha * new_columns) + (beta * copies) + (gamma * future_misalignment_cost) + (delta * cell_replaced)
+    return (alpha * copies) + (beta * new_columns) + (gamma * future_misalignment_cost) + (delta * cell_replaced)
 
 def and_column_cost(
         copies,
         future_misalignment_cost,
-        beta=1.0,
-        gamma=1.0
+        alpha,
+        gamma
     ) -> float:
     
-    return (beta * copies) + (gamma * future_misalignment_cost)
+    return (alpha * copies) + (gamma * future_misalignment_cost)
 
 def calculate_future_misalignment_nor(
         *, 
