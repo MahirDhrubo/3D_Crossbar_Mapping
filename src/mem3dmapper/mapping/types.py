@@ -32,7 +32,7 @@ class MappingConfig:
     beta: float
     gamma: float
 
-    def __init__(self, total_rows, total_columns, cluster_window = 50, alpha = 1.0, beta = 1.0, gamma = 1.0):
+    def __init__(self, total_rows, total_columns, cluster_window = 256, alpha = 1.0, beta = 1.0, gamma = 1.0):
         self.total_rows = total_rows
         self.total_columns = total_columns
         self.cluster_window = cluster_window

@@ -48,7 +48,7 @@ class AutoCost(GateParams):
 
 class MultiplierConst(GateParams):
     def __init__(self):
-        super().__init__(nor_count = 5119, not_count = 934, and_count = 3265, copy_count = 7807, total_area = 8*512)
+        super().__init__(nor_count = 5119, not_count = 934, and_count = 3265, copy_count = 10908, total_area = 8*512)
 
 class AdderNorConst(GateParams):
     def __init__(self):
@@ -616,13 +616,18 @@ if __name__ == "__main__":
     simpler_cost = EvaluationCost(K=K, device_params=DeviceParams(), gateCount=SimplerCost())
     logic_cost = EvaluationCost(K=K, device_params=DeviceParams(), gateCount=LogicCost())
     auto_cost = EvaluationCost(K=K, device_params=DeviceParams(), gateCount=AutoCost())
+    multiplier_nor_cost = EvaluationCost(K=K, device_params=DeviceParams(), gateCount=MultiplierNorConst())
 
     # multiplier_nor_cost = EvaluationCost(K=4, device_params=DeviceParams(), gateCount=MultiplierNorConst())
     adder_nor_cost = EvaluationCost(K=K, device_params=DeviceParams(), gateCount=AdderNorConst())
 
     multiplier_cost.calculate()
     adder_cost.calculate()
-    
+
+    print(multiplier_cost.get_results())
+    multiplier_nor_cost.calculate()
+    print(multiplier_nor_cost.get_results())
+
     # multiplier_nor_cost.calculate()
     ultra_cost.calculate()
     simpler_cost.calculate()
@@ -630,15 +635,15 @@ if __name__ == "__main__":
     auto_cost.calculate()
     adder_nor_cost.calculate()
 
-    print(multiplier_cost.get_results())
-    print(adder_cost.get_results())
+    # print(multiplier_cost.get_results())
+    # print(adder_cost.get_results())
 
-    # print(multiplier_nor_cost.get_results())
-    print(ultra_cost.get_results())
-    print(simpler_cost.get_results())
-    print(logic_cost.get_results())
-    print(auto_cost.get_results())
-    print(adder_nor_cost.get_results())
+    # # print(multiplier_nor_cost.get_results())
+    # print(ultra_cost.get_results())
+    # print(simpler_cost.get_results())
+    # print(logic_cost.get_results())
+    # print(auto_cost.get_results())
+    # print(adder_nor_cost.get_results())
 
     
     compare_multiple_frameworks(
