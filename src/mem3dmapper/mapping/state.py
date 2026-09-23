@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Tuple, List
 
 from mem3dmapper.mapping.types import Coordinate, Operation, Operation_type, MappingConfig
-from mem3dmapper.netlist.types import GateType
+from mem3dmapper.netlist.types import GateType, Gate
 
 
 @dataclass
@@ -32,6 +32,9 @@ class MappingState:
 
     def _increment_cycle(self, val = 1) -> None:
         self.cycle_count += val
+
+    def _decrement_cycle(self, val = 1) -> None:
+        self.cycle_count -= val
 
     def _put_net(self, net: str, location: Coordinate) -> None:
         previous_net = self.location_to_net.get(location)
@@ -65,6 +68,27 @@ class MappingState:
                 return location
         return None
 
+    def maximum_common_row(self, nets: List[str]) -> int:
+        # find the row that is most common and its count
+        row_count = {}
+        for net in nets:
+            locations = self.net_location.get(net)
+            if locations:
+                row_set = set()
+                for location in locations:
+                    row = location[1]
+                    if row in row_set:
+                        continue
+                    row_set.add(row)
+                    row_count[row] = row_count.get(row, 0) + 1
+
+        if not row_count:
+            return -1, 0
+
+        # Find the row with the maximum count
+        max_row = max(row_count, key=row_count.get)
+        return max_row, row_count[max_row]
+
     def has_net_on_row(self, net: str, row: int) -> bool:
         for col in range(self.tail_x[row]):
             if self.location_to_net.get((col, row)) == net:
@@ -76,6 +100,9 @@ class MappingState:
             return 0
         if dest in self.primary_input_locations.values() or dest in self.primary_output_locations.values():
             return 1000 # prohibit copying to primary input/output locations
+        
+        # if self.net_location.get(net) is None:
+        #     return 0
 
         # copy from same row -> 2 cycles (not, not)
         # copy from different row -> 3 cycles (not, and, not)
@@ -136,6 +163,17 @@ class MappingState:
             cycle=self.cycle_count
         ))
 
+    def execute_concurrent_nets(self,
+                                gates: List[Gate],
+                                locations: List[Coordinate],
+                                input_locations_by_gate: Dict[int, List[Coordinate]]) -> None:
+        for gate, location in zip(gates, locations):
+            self.execute_net(gate.output, location, gate.type, tuple(gate.inputs), input_locations_by_gate.get(gate.gid))
+            self._decrement_cycle()
+        
+        self._increment_cycle()
+            
+
     def is_forbidden(self, location: Coordinate) -> bool:
         # Check if the location is forbidden for placement
         if not (0 <= location[0] < self.config.total_columns and 0 <= location[1] < self.config.total_rows):
@@ -165,3 +203,27 @@ class MappingState:
         # A net is replacable if it has multiple copies
         net = self.location_to_net.get(location)
         return len(self.net_location.get(net, set())) > 1
+    
+    def is_window_replacable(self, col, row_start, row_end, excluded_nets) -> bool:
+        copy_count = {}
+        for row in range(row_start, row_end + 1):
+            net = self.location_to_net.get((col, row))
+            if self.is_forbidden((col, row)):
+                return False
+
+            copy_count[net] = len(self.net_location.get(net, set()))
+        
+        is_replacable = True
+        for row in range(row_start, row_end + 1):
+            net = self.location_to_net.get((col, row))
+
+            if net in excluded_nets:
+                continue
+            
+            if copy_count[net] <= 1:
+                is_replacable = False
+                break
+            else:
+                copy_count[net] -= 1
+
+        return is_replacable

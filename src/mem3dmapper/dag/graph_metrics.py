@@ -1,5 +1,5 @@
 import random
-from collections import deque
+from collections import defaultdict, deque
 from typing import Dict, Iterator, List, Optional
 from scipy.optimize import linear_sum_assignment
 
@@ -16,6 +16,7 @@ def topo_sort(adj: Dict[int, set[int]]):
     Returns:
         list: A list of nodes in topologically sorted order.
     """
+    print("Performing topological sort")
     in_degree = {u: 0 for u in adj}  # Initialize in-degrees of all nodes to 0
     for u in adj:
         for v in adj[u]:
@@ -187,3 +188,65 @@ def hungarian_algo(cost):
     min_cost = sum(cost[i][j] for i, j in zip(row_index, col_index))   
 
     return row_index, col_index, min_cost
+
+# forward level all the nodes of a graph (adj[u] = successor)
+def level_order_BFS(adj: Dict[int, set[int]]) -> Dict[int, int]:
+    """
+    Assign a level to each node in the graph based on its distance from the root.
+    """
+    levels = {u: -1 for u in adj}
+    in_degree = {u: 0 for u in adj}
+    queue = deque()
+    
+    for u in adj:
+        for v in adj[u]:
+            in_degree[v] += 1
+
+    for u in adj:
+        if in_degree[u] == 0:  # If no incoming edges, it's a root
+            queue.append(u)
+            levels[u] = 0
+
+    while queue:
+        u = queue.popleft()
+        for v in adj[u]:
+            levels[v] = levels[u] + 1
+            in_degree[v] -= 1
+            if in_degree[v] == 0:
+                queue.append(v)
+
+    # If any node still has in_degree > 0, graph contains a cycle
+    cyclic_nodes = [u for u, d in in_degree.items() if d > 0]
+    if cyclic_nodes:
+        raise ValueError(f"Graph contains cycle(s), cyclic nodes: {cyclic_nodes}")
+
+    return levels
+            
+def group_by_levels(adj: Dict[int, set[int]]) -> Dict[int, List[int]]:
+    """
+    Group nodes by their levels.
+    """
+    print("Grouping nodes by levels (BFS)")
+    levels = level_order_BFS(adj)
+    
+    grouped = defaultdict(list)
+    for node, level in levels.items():
+        grouped[level].append(node)
+    return grouped
+
+if __name__ == "__main__":
+    # Example usage
+    graph = {
+        0: set(),
+        1: {5, 6},
+        2: {0, 9},
+        3: {9, 4},
+        4: {5, 6},
+        5: {7},
+        6: {7},
+        7: {8},
+        8: set(),
+        9: {0}
+    }
+    grouped = group_by_levels(graph)
+    print(grouped)

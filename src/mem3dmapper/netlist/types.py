@@ -4,11 +4,13 @@ from typing import List, Dict
 
 class GateType(Enum):
     AND = auto()
+    NAND = auto()
+    OR = auto()
     NOT = auto()
     NOR = auto()
 
-PARALLEL_GATES = {GateType.NOT, GateType.NOR}
-SERIES_GATES = {GateType.AND}
+PARALLEL_GATES = {GateType.NOT, GateType.NOR, GateType.OR}
+SERIES_GATES = {GateType.AND, GateType.NAND}
 
 @dataclass(frozen=True)
 class Gate:
