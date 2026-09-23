@@ -9,9 +9,17 @@ and latency from fixed, confirmed device-level parameters.
 Device parameters (fJ per operation, ns per cycle) are confirmed values.
 NOT is assumed equal to NOR, and COPY is assumed equal to AND, since a
 MAGIC NOT shares NOR's parallel-connection mechanism and a COPY is
-implemented as a single-input AND. NOR/NOT operations are SET-initialized;
-AND/COPY operations are RESET-initialized. WRITE operations (primary-input
+implemented as a single-input AND. Per Kvatinsky et al. 2014 ("MAGIC --
+Memristor-Aided Logic"), NOR/NOT gates initialize their output to logic 1
+and AND gates initialize their output to logic 0; RESET writes logic 1 and
+SET writes logic 0, so NOR/NOT operations are RESET-initialized and
+AND/COPY operations are SET-initialized. WRITE operations (primary-input
 initialization) are excluded from the energy/latency totals.
+
+CYCLE_TIME_NS is fixed at 0.1 ns, matching the paper's own circuit
+validation: "With 0.1ns latency the minimum energy points used are..."
+(Section III-C) -- the same fixed pulse width used to derive the energy
+constants above from data/logic_lowest_energy_best_points.csv.
 """
 
 from __future__ import annotations
@@ -28,7 +36,7 @@ E_NOR_FJ = 1.29
 E_AND_FJ = 0.097
 E_NOT_FJ = E_NOR_FJ
 E_COPY_FJ = E_AND_FJ
-CYCLE_TIME_NS = 0.177
+CYCLE_TIME_NS = 0.1
 
 GATE_TYPES: Tuple[str, ...] = ("NOR", "NOT", "AND", "COPY")
 
@@ -39,10 +47,10 @@ EXECUTION_ENERGY_FJ: Dict[str, float] = {
     "COPY": E_COPY_FJ,
 }
 INIT_ENERGY_FJ: Dict[str, float] = {
-    "NOR": E_SET_FJ,
-    "NOT": E_SET_FJ,
-    "AND": E_RESET_FJ,
-    "COPY": E_RESET_FJ,
+    "NOR": E_RESET_FJ,
+    "NOT": E_RESET_FJ,
+    "AND": E_SET_FJ,
+    "COPY": E_SET_FJ,
 }
 
 

@@ -402,12 +402,6 @@ def validate_execution(netlist: Netlist, state: MappingState) -> None:
         cycle_destination_cells = {
             operation.location for _, operation in indexed_operations
         }
-        participating_nets = {
-            snapshot[source]
-            for _, operation in indexed_operations
-            for source in (operation.src or [])
-            if source in snapshot
-        }
 
         for index, operation in indexed_operations:
             if operation.location in destinations:
@@ -436,10 +430,7 @@ def validate_execution(netlist: Netlist, state: MappingState) -> None:
                 surviving_copies = (
                     locations.get(previous_net, set()) - cycle_destination_cells
                 )
-                can_replace_live_copy = (
-                    previous_net not in participating_nets
-                    and bool(surviving_copies)
-                )
+                can_replace_live_copy = bool(surviving_copies)
                 if (
                     remaining_uses.get(previous_net, 0) > 0
                     and not can_replace_live_copy

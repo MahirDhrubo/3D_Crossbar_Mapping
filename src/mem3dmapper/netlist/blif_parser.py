@@ -17,7 +17,10 @@ def _parse_pin_mapping(tokens: List[str]) -> Dict[str, str]:
         if '=' not in token:
             raise BlifParserError(f"Invalid pin mapping. Expected 'pin=net', got '{token}'")
         pin, net = token.split('=', 1)
-        pin_map[pin] = net.split('$')[-1].split('_')[-1]
+        if '$' in net:
+            # Yosys-internal net (e.g. "$abc$90$new_n13") -- shorten to "n13".
+            net = net.split('$')[-1].split('_')[-1]
+        pin_map[pin] = net
 
     return pin_map
 

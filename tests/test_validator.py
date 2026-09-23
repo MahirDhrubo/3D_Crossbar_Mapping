@@ -220,7 +220,13 @@ class ValidatorTests(unittest.TestCase):
 
         validate_mapping(netlist, state)
 
-    def test_live_copy_cannot_be_reused_while_net_participates(self) -> None:
+    def test_live_copy_can_be_reused_while_net_participates(self) -> None:
+        """A copy of a live net may be overwritten by an operation that also
+        reads that same net this cycle (from a different cell), as long as
+        another copy survives elsewhere. The read uses the pre-cycle
+        snapshot, so it is unaffected by the destination cell being
+        overwritten within the same cycle."""
+
         netlist = Netlist(
             name="participating_live_copy",
             primary_inputs=["a", "b"],
@@ -237,10 +243,24 @@ class ValidatorTests(unittest.TestCase):
         for net, cell in {"a": (0, 0), "b": (1, 0)}.items():
             state.write_net(net, cell)
             state.primary_input_locations[net] = cell
-        state.copy_net("a", (0, 0), (2, 0))
-        state.execute_net("x", (2, 0), GateType.NOR, ("a", "b"), [(0, 0), (1, 0)])
 
-        self.assert_invalid(netlist, state, "requires the net to be idle")
+        state.copy_net("a", (0, 0), (2, 0))
+
+        # Overwrites the copy of 'a' at (2, 0) while also reading 'a' from
+        # (0, 0) as an input in this same operation -- allowed, since (0, 0)
+        # still holds 'a' afterward.
+        state.execute_net("x", (2, 0), GateType.NOR, ("a", "b"), [(0, 0), (1, 0)])
+        state.uses_left["a"] -= 1
+        state.uses_left["b"] -= 1
+        state.primary_output_locations["x"] = (2, 0)
+
+        state.execute_net("y", (3, 0), GateType.NOR, ("a", "b"), [(0, 0), (1, 0)])
+        state.uses_left["a"] -= 1
+        state.uses_left["b"] -= 1
+        state.primary_output_locations["y"] = (3, 0)
+        state.tail_x = [4, 0]
+
+        validate_mapping(netlist, state)
 
     def test_rejects_reported_state_that_disagrees_with_replay(self) -> None:
         netlist, state = make_valid_mapping()
