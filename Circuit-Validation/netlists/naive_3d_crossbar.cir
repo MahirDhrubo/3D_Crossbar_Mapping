@@ -1,0 +1,394 @@
+* Generic configurable 3D VTEAM memristor crossbar.
+*
+* Wire layers:
+*   layer 3: column wires c0_l3, c1_l3, c2_l3, c3_l3
+*   layer 2: row wires    r0_l2, r1_l2
+*   layer 1: column wires c0_l1, c1_l1, c2_l1, c3_l1
+*   layer 0: row wires    r0_l0, r1_l0
+*
+* Device planes:
+*   L01 connects layer 1 columns to layer 0 rows.
+*   L12 connects layer 2 rows to layer 1 columns.
+*   L23 connects layer 3 columns to layer 2 rows.
+*
+* Uniform device polarity:
+*   p = electrode on the higher-Z layer
+*   n = electrode on the lower-Z layer
+*
+* Therefore:
+*   L01: p=layer-1 column, n=layer-0 row
+*   L12: p=layer-2 row,    n=layer-1 column
+*   L23: p=layer-3 column, n=layer-2 row
+*
+* 1T1R-style crosspoint branch:
+*   selected physical wire on the higher-Z side
+*       |
+*   ideal selector, controlled by SEL_Lxx_Cy
+*       |
+*   cell-specific intermediate node s_lxx_ry_cz
+*       |
+*   VTEAM p terminal
+*   VTEAM n terminal
+*       |
+*   physical wire on the lower-Z side
+*
+* SEL_Lxx_Cy controls all selector-memristor branches in plane Lxx and column Cy.
+* The controlled cells share a selector-control voltage, but each cell has its
+* own current-carrying selector path.
+* DRV_EN_* connects an external PWL voltage driver to a physical wire.
+
+.INCLUDE "netlists/vteam_model.inc"
+
+* VTEAM model parameters.
+.PARAM KON=-216.2
+.PARAM KOFF=0.091
+.PARAM VON=-1.5
+.PARAM VOFF=0.3
+.PARAM WON=0
+.PARAM WOFF=3n
+.PARAM ALPHAON=4
+.PARAM ALPHAOFF=4
+.PARAM RON=1k
+.PARAM ROFF=300k
+
+.PARAM WLOGIC0={WOFF}
+.PARAM WLOGIC1={WON}
+
+* Cell initial conditions. Default all cells to HRS / logic 0.
+.PARAM INIT_L01_R0_C0={WLOGIC1}
+.PARAM INIT_L01_R0_C1={WLOGIC0}
+.PARAM INIT_L01_R0_C2={WLOGIC0}
+.PARAM INIT_L01_R0_C3={WLOGIC0}
+.PARAM INIT_L01_R1_C0={WLOGIC0}
+.PARAM INIT_L01_R1_C1={WLOGIC0}
+.PARAM INIT_L01_R1_C2={WLOGIC0}
+.PARAM INIT_L01_R1_C3={WLOGIC0}
+
+.PARAM INIT_L12_R0_C0={WLOGIC1}
+.PARAM INIT_L12_R0_C1={WLOGIC0}
+.PARAM INIT_L12_R0_C2={WLOGIC0}
+.PARAM INIT_L12_R0_C3={WLOGIC0}
+.PARAM INIT_L12_R1_C0={WLOGIC1}
+.PARAM INIT_L12_R1_C1={WLOGIC0}
+.PARAM INIT_L12_R1_C2={WLOGIC0}
+.PARAM INIT_L12_R1_C3={WLOGIC0}
+
+.PARAM INIT_L23_R0_C0={WLOGIC0}
+.PARAM INIT_L23_R0_C1={WLOGIC0}
+.PARAM INIT_L23_R0_C2={WLOGIC0}
+.PARAM INIT_L23_R0_C3={WLOGIC0}
+.PARAM INIT_L23_R1_C0={WLOGIC0}
+.PARAM INIT_L23_R1_C1={WLOGIC0}
+.PARAM INIT_L23_R1_C2={WLOGIC0}
+.PARAM INIT_L23_R1_C3={WLOGIC0}
+
+* Selector controls. Default all device selectors off.
+.PARAM SEL_L01_C0=1
+.PARAM SEL_L01_C1=0
+.PARAM SEL_L01_C2=0
+.PARAM SEL_L01_C3=0
+.PARAM SEL_L12_C0=1
+.PARAM SEL_L12_C1=0
+.PARAM SEL_L12_C2=0
+.PARAM SEL_L12_C3=0
+.PARAM SEL_L23_C0=1
+.PARAM SEL_L23_C1=0
+.PARAM SEL_L23_C2=0
+.PARAM SEL_L23_C3=0
+
+.PARAM SEL_THRESH=0.5
+.PARAM G_SEL_ON=1e3
+.PARAM G_SEL_OFF=1e-12
+.PARAM G_DRV_ON=1e6
+.PARAM G_DRV_OFF=1e-15
+.PARAM R_LEAK=1e12
+
+* The selector is currently an ideal bidirectional abstraction of the
+* transistor in a 1T1R cell. It is not a physical MOSFET model.
+
+* Shared pulse timing for all external line drivers.
+.PARAM T_RISE_START=1n
+.PARAM T_PULSE_START=1.1n
+.PARAM T_PULSE_END=3.1n
+.PARAM T_FALL_END=3.2n
+.PARAM T_STOP=5n
+
+* External physical-line voltage amplitudes.
+* A value of 0 V means ground only when the corresponding DRV_EN_* is 1.
+.PARAM V_L0_R0=2
+.PARAM V_L0_R1=2
+.PARAM V_L1_C0=0
+.PARAM V_L1_C1=0
+.PARAM V_L1_C2=0
+.PARAM V_L1_C3=0
+.PARAM V_L2_R0=0
+.PARAM V_L2_R1=0
+.PARAM V_L3_C0=0
+.PARAM V_L3_C1=0
+.PARAM V_L3_C2=0
+.PARAM V_L3_C3=0
+
+* External driver enables. Default all physical wires floating except leakage.
+.PARAM DRV_EN_L0_R0=1
+.PARAM DRV_EN_L0_R1=1
+.PARAM DRV_EN_L1_C0=0
+.PARAM DRV_EN_L1_C1=0
+.PARAM DRV_EN_L1_C2=0
+.PARAM DRV_EN_L1_C3=0
+.PARAM DRV_EN_L2_R0=0
+.PARAM DRV_EN_L2_R1=0
+.PARAM DRV_EN_L3_C0=1
+.PARAM DRV_EN_L3_C1=0
+.PARAM DRV_EN_L3_C2=0
+.PARAM DRV_EN_L3_C3=0
+
+* Selector control voltage sources.
+VSEL_L01_C0 sel_l01_c0 0 {SEL_L01_C0}
+VSEL_L01_C1 sel_l01_c1 0 {SEL_L01_C1}
+VSEL_L01_C2 sel_l01_c2 0 {SEL_L01_C2}
+VSEL_L01_C3 sel_l01_c3 0 {SEL_L01_C3}
+VSEL_L12_C0 sel_l12_c0 0 {SEL_L12_C0}
+VSEL_L12_C1 sel_l12_c1 0 {SEL_L12_C1}
+VSEL_L12_C2 sel_l12_c2 0 {SEL_L12_C2}
+VSEL_L12_C3 sel_l12_c3 0 {SEL_L12_C3}
+VSEL_L23_C0 sel_l23_c0 0 {SEL_L23_C0}
+VSEL_L23_C1 sel_l23_c1 0 {SEL_L23_C1}
+VSEL_L23_C2 sel_l23_c2 0 {SEL_L23_C2}
+VSEL_L23_C3 sel_l23_c3 0 {SEL_L23_C3}
+* Driver-enable control voltage sources.
+VDRV_EN_L0_R0 drv_en_l0_r0 0 {DRV_EN_L0_R0}
+VDRV_EN_L0_R1 drv_en_l0_r1 0 {DRV_EN_L0_R1}
+VDRV_EN_L1_C0 drv_en_l1_c0 0 {DRV_EN_L1_C0}
+VDRV_EN_L1_C1 drv_en_l1_c1 0 {DRV_EN_L1_C1}
+VDRV_EN_L1_C2 drv_en_l1_c2 0 {DRV_EN_L1_C2}
+VDRV_EN_L1_C3 drv_en_l1_c3 0 {DRV_EN_L1_C3}
+VDRV_EN_L2_R0 drv_en_l2_r0 0 {DRV_EN_L2_R0}
+VDRV_EN_L2_R1 drv_en_l2_r1 0 {DRV_EN_L2_R1}
+VDRV_EN_L3_C0 drv_en_l3_c0 0 {DRV_EN_L3_C0}
+VDRV_EN_L3_C1 drv_en_l3_c1 0 {DRV_EN_L3_C1}
+VDRV_EN_L3_C2 drv_en_l3_c2 0 {DRV_EN_L3_C2}
+VDRV_EN_L3_C3 drv_en_l3_c3 0 {DRV_EN_L3_C3}
+* External line voltage sources drive private driver nodes.
+VDRV_L0_R0 drv_l0_r0 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L0_R0}
++ {T_PULSE_END} {V_L0_R0}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L0_R1 drv_l0_r1 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L0_R1}
++ {T_PULSE_END} {V_L0_R1}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L1_C0 drv_l1_c0 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L1_C0}
++ {T_PULSE_END} {V_L1_C0}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L1_C1 drv_l1_c1 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L1_C1}
++ {T_PULSE_END} {V_L1_C1}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L1_C2 drv_l1_c2 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L1_C2}
++ {T_PULSE_END} {V_L1_C2}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L1_C3 drv_l1_c3 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L1_C3}
++ {T_PULSE_END} {V_L1_C3}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L2_R0 drv_l2_r0 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L2_R0}
++ {T_PULSE_END} {V_L2_R0}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L2_R1 drv_l2_r1 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L2_R1}
++ {T_PULSE_END} {V_L2_R1}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L3_C0 drv_l3_c0 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L3_C0}
++ {T_PULSE_END} {V_L3_C0}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L3_C1 drv_l3_c1 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L3_C1}
++ {T_PULSE_END} {V_L3_C1}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L3_C2 drv_l3_c2 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L3_C2}
++ {T_PULSE_END} {V_L3_C2}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L3_C3 drv_l3_c3 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L3_C3}
++ {T_PULSE_END} {V_L3_C3}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+
+* Driver-connect switches. DRV_EN_* = 0 leaves physical wire floating except leak.
+BDRV_L0_R0 drv_l0_r0 r0_l0 I={V(drv_l0_r0,r0_l0)*IF(V(drv_en_l0_r0)>SEL_THRESH,G_DRV_ON,G_DRV_OFF)}
+BDRV_L0_R1 drv_l0_r1 r1_l0 I={V(drv_l0_r1,r1_l0)*IF(V(drv_en_l0_r1)>SEL_THRESH,G_DRV_ON,G_DRV_OFF)}
+BDRV_L1_C0 drv_l1_c0 c0_l1 I={V(drv_l1_c0,c0_l1)*IF(V(drv_en_l1_c0)>SEL_THRESH,G_DRV_ON,G_DRV_OFF)}
+BDRV_L1_C1 drv_l1_c1 c1_l1 I={V(drv_l1_c1,c1_l1)*IF(V(drv_en_l1_c1)>SEL_THRESH,G_DRV_ON,G_DRV_OFF)}
+BDRV_L1_C2 drv_l1_c2 c2_l1 I={V(drv_l1_c2,c2_l1)*IF(V(drv_en_l1_c2)>SEL_THRESH,G_DRV_ON,G_DRV_OFF)}
+BDRV_L1_C3 drv_l1_c3 c3_l1 I={V(drv_l1_c3,c3_l1)*IF(V(drv_en_l1_c3)>SEL_THRESH,G_DRV_ON,G_DRV_OFF)}
+BDRV_L2_R0 drv_l2_r0 r0_l2 I={V(drv_l2_r0,r0_l2)*IF(V(drv_en_l2_r0)>SEL_THRESH,G_DRV_ON,G_DRV_OFF)}
+BDRV_L2_R1 drv_l2_r1 r1_l2 I={V(drv_l2_r1,r1_l2)*IF(V(drv_en_l2_r1)>SEL_THRESH,G_DRV_ON,G_DRV_OFF)}
+BDRV_L3_C0 drv_l3_c0 c0_l3 I={V(drv_l3_c0,c0_l3)*IF(V(drv_en_l3_c0)>SEL_THRESH,G_DRV_ON,G_DRV_OFF)}
+BDRV_L3_C1 drv_l3_c1 c1_l3 I={V(drv_l3_c1,c1_l3)*IF(V(drv_en_l3_c1)>SEL_THRESH,G_DRV_ON,G_DRV_OFF)}
+BDRV_L3_C2 drv_l3_c2 c2_l3 I={V(drv_l3_c2,c2_l3)*IF(V(drv_en_l3_c2)>SEL_THRESH,G_DRV_ON,G_DRV_OFF)}
+BDRV_L3_C3 drv_l3_c3 c3_l3 I={V(drv_l3_c3,c3_l3)*IF(V(drv_en_l3_c3)>SEL_THRESH,G_DRV_ON,G_DRV_OFF)}
+
+* Physical wire numerical leaks.
+RLEAK_L0_R0 r0_l0 0 {R_LEAK}
+RLEAK_L0_R1 r1_l0 0 {R_LEAK}
+RLEAK_L1_C0 c0_l1 0 {R_LEAK}
+RLEAK_L1_C1 c1_l1 0 {R_LEAK}
+RLEAK_L1_C2 c2_l1 0 {R_LEAK}
+RLEAK_L1_C3 c3_l1 0 {R_LEAK}
+RLEAK_L2_R0 r0_l2 0 {R_LEAK}
+RLEAK_L2_R1 r1_l2 0 {R_LEAK}
+RLEAK_L3_C0 c0_l3 0 {R_LEAK}
+RLEAK_L3_C1 c1_l3 0 {R_LEAK}
+RLEAK_L3_C2 c2_l3 0 {R_LEAK}
+RLEAK_L3_C3 c3_l3 0 {R_LEAK}
+
+* Device-plane selector branches.
+* Do not add leakage resistors to s_lxx_ry_cz nodes; G_SEL_OFF is the intended
+* off-state connection for unselected cells.
+* L01: selector from layer-1 column to cell p node; VTEAM n is layer-0 row.
+BSEL_L01_R0_C0 c0_l1 s_l01_r0_c0 I={V(c0_l1,s_l01_r0_c0)*IF(V(sel_l01_c0)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L01_R0_C1 c1_l1 s_l01_r0_c1 I={V(c1_l1,s_l01_r0_c1)*IF(V(sel_l01_c1)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L01_R0_C2 c2_l1 s_l01_r0_c2 I={V(c2_l1,s_l01_r0_c2)*IF(V(sel_l01_c2)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L01_R0_C3 c3_l1 s_l01_r0_c3 I={V(c3_l1,s_l01_r0_c3)*IF(V(sel_l01_c3)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L01_R1_C0 c0_l1 s_l01_r1_c0 I={V(c0_l1,s_l01_r1_c0)*IF(V(sel_l01_c0)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L01_R1_C1 c1_l1 s_l01_r1_c1 I={V(c1_l1,s_l01_r1_c1)*IF(V(sel_l01_c1)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L01_R1_C2 c2_l1 s_l01_r1_c2 I={V(c2_l1,s_l01_r1_c2)*IF(V(sel_l01_c2)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L01_R1_C3 c3_l1 s_l01_r1_c3 I={V(c3_l1,s_l01_r1_c3)*IF(V(sel_l01_c3)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+
+* L12: selector from layer-2 row to cell p node; VTEAM n is layer-1 column.
+BSEL_L12_R0_C0 r0_l2 s_l12_r0_c0 I={V(r0_l2,s_l12_r0_c0)*IF(V(sel_l12_c0)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L12_R0_C1 r0_l2 s_l12_r0_c1 I={V(r0_l2,s_l12_r0_c1)*IF(V(sel_l12_c1)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L12_R0_C2 r0_l2 s_l12_r0_c2 I={V(r0_l2,s_l12_r0_c2)*IF(V(sel_l12_c2)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L12_R0_C3 r0_l2 s_l12_r0_c3 I={V(r0_l2,s_l12_r0_c3)*IF(V(sel_l12_c3)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L12_R1_C0 r1_l2 s_l12_r1_c0 I={V(r1_l2,s_l12_r1_c0)*IF(V(sel_l12_c0)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L12_R1_C1 r1_l2 s_l12_r1_c1 I={V(r1_l2,s_l12_r1_c1)*IF(V(sel_l12_c1)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L12_R1_C2 r1_l2 s_l12_r1_c2 I={V(r1_l2,s_l12_r1_c2)*IF(V(sel_l12_c2)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L12_R1_C3 r1_l2 s_l12_r1_c3 I={V(r1_l2,s_l12_r1_c3)*IF(V(sel_l12_c3)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+
+* L23: selector from layer-3 column to cell p node; VTEAM n is layer-2 row.
+BSEL_L23_R0_C0 c0_l3 s_l23_r0_c0 I={V(c0_l3,s_l23_r0_c0)*IF(V(sel_l23_c0)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L23_R0_C1 c1_l3 s_l23_r0_c1 I={V(c1_l3,s_l23_r0_c1)*IF(V(sel_l23_c1)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L23_R0_C2 c2_l3 s_l23_r0_c2 I={V(c2_l3,s_l23_r0_c2)*IF(V(sel_l23_c2)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L23_R0_C3 c3_l3 s_l23_r0_c3 I={V(c3_l3,s_l23_r0_c3)*IF(V(sel_l23_c3)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L23_R1_C0 c0_l3 s_l23_r1_c0 I={V(c0_l3,s_l23_r1_c0)*IF(V(sel_l23_c0)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L23_R1_C1 c1_l3 s_l23_r1_c1 I={V(c1_l3,s_l23_r1_c1)*IF(V(sel_l23_c1)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L23_R1_C2 c2_l3 s_l23_r1_c2 I={V(c2_l3,s_l23_r1_c2)*IF(V(sel_l23_c2)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+BSEL_L23_R1_C3 c3_l3 s_l23_r1_c3 I={V(c3_l3,s_l23_r1_c3)*IF(V(sel_l23_c3)>SEL_THRESH,G_SEL_ON,G_SEL_OFF)}
+
+* L01 VTEAM cells: p=selector intermediate from layer-1 column, n=layer-0 row.
+Xl01r0c0 s_l01_r0_c0 r0_l0 x_l01_r0_c0 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L01_R0_C0} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl01r0c1 s_l01_r0_c1 r0_l0 x_l01_r0_c1 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L01_R0_C1} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl01r0c2 s_l01_r0_c2 r0_l0 x_l01_r0_c2 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L01_R0_C2} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl01r0c3 s_l01_r0_c3 r0_l0 x_l01_r0_c3 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L01_R0_C3} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl01r1c0 s_l01_r1_c0 r1_l0 x_l01_r1_c0 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L01_R1_C0} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl01r1c1 s_l01_r1_c1 r1_l0 x_l01_r1_c1 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L01_R1_C1} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl01r1c2 s_l01_r1_c2 r1_l0 x_l01_r1_c2 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L01_R1_C2} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl01r1c3 s_l01_r1_c3 r1_l0 x_l01_r1_c3 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L01_R1_C3} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+
+* L12 VTEAM cells: p=selector intermediate from layer-2 row, n=layer-1 column.
+Xl12r0c0 s_l12_r0_c0 c0_l1 x_l12_r0_c0 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L12_R0_C0} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl12r0c1 s_l12_r0_c1 c1_l1 x_l12_r0_c1 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L12_R0_C1} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl12r0c2 s_l12_r0_c2 c2_l1 x_l12_r0_c2 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L12_R0_C2} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl12r0c3 s_l12_r0_c3 c3_l1 x_l12_r0_c3 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L12_R0_C3} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl12r1c0 s_l12_r1_c0 c0_l1 x_l12_r1_c0 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L12_R1_C0} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl12r1c1 s_l12_r1_c1 c1_l1 x_l12_r1_c1 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L12_R1_C1} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl12r1c2 s_l12_r1_c2 c2_l1 x_l12_r1_c2 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L12_R1_C2} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl12r1c3 s_l12_r1_c3 c3_l1 x_l12_r1_c3 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L12_R1_C3} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+
+* L23 VTEAM cells: p=selector intermediate from layer-3 column, n=layer-2 row.
+Xl23r0c0 s_l23_r0_c0 r0_l2 x_l23_r0_c0 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L23_R0_C0} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl23r0c1 s_l23_r0_c1 r0_l2 x_l23_r0_c1 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L23_R0_C1} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl23r0c2 s_l23_r0_c2 r0_l2 x_l23_r0_c2 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L23_R0_C2} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl23r0c3 s_l23_r0_c3 r0_l2 x_l23_r0_c3 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L23_R0_C3} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl23r1c0 s_l23_r1_c0 r1_l2 x_l23_r1_c0 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L23_R1_C0} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl23r1c1 s_l23_r1_c1 r1_l2 x_l23_r1_c1 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L23_R1_C1} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl23r1c2 s_l23_r1_c2 r1_l2 x_l23_r1_c2 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L23_R1_C2} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl23r1c3 s_l23_r1_c3 r1_l2 x_l23_r1_c3 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L23_R1_C3} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+
+.TRAN 1ps {T_STOP} 0 1ps
+.PRINT TRAN FORMAT=CSV
++ V(r0_l0) V(r1_l0)
++ V(c0_l1) V(c1_l1) V(c2_l1) V(c3_l1)
++ V(r0_l2) V(r1_l2)
++ V(c0_l3) V(c1_l3) V(c2_l3) V(c3_l3)
++ V(sel_l01_c0) V(sel_l01_c1) V(sel_l01_c2) V(sel_l01_c3)
++ V(sel_l12_c0) V(sel_l12_c1) V(sel_l12_c2) V(sel_l12_c3)
++ V(sel_l23_c0) V(sel_l23_c1) V(sel_l23_c2) V(sel_l23_c3)
++ V(s_l01_r0_c0) V(s_l01_r0_c1) V(s_l01_r0_c2) V(s_l01_r0_c3)
++ V(s_l01_r1_c0) V(s_l01_r1_c1) V(s_l01_r1_c2) V(s_l01_r1_c3)
++ V(s_l12_r0_c0) V(s_l12_r0_c1) V(s_l12_r0_c2) V(s_l12_r0_c3)
++ V(s_l12_r1_c0) V(s_l12_r1_c1) V(s_l12_r1_c2) V(s_l12_r1_c3)
++ V(s_l23_r0_c0) V(s_l23_r0_c1) V(s_l23_r0_c2) V(s_l23_r0_c3)
++ V(s_l23_r1_c0) V(s_l23_r1_c1) V(s_l23_r1_c2) V(s_l23_r1_c3)
++ V(x_l01_r0_c0) V(x_l01_r0_c1) V(x_l01_r0_c2) V(x_l01_r0_c3)
++ V(x_l01_r1_c0) V(x_l01_r1_c1) V(x_l01_r1_c2) V(x_l01_r1_c3)
++ V(x_l12_r0_c0) V(x_l12_r0_c1) V(x_l12_r0_c2) V(x_l12_r0_c3)
++ V(x_l12_r1_c0) V(x_l12_r1_c1) V(x_l12_r1_c2) V(x_l12_r1_c3)
++ V(x_l23_r0_c0) V(x_l23_r0_c1) V(x_l23_r0_c2) V(x_l23_r0_c3)
++ V(x_l23_r1_c0) V(x_l23_r1_c1) V(x_l23_r1_c2) V(x_l23_r1_c3)
++ V(s_l01_r0_c0,r0_l0) V(s_l01_r0_c1,r0_l0) V(s_l01_r0_c2,r0_l0) V(s_l01_r0_c3,r0_l0)
++ V(s_l01_r1_c0,r1_l0) V(s_l01_r1_c1,r1_l0) V(s_l01_r1_c2,r1_l0) V(s_l01_r1_c3,r1_l0)
++ V(s_l12_r0_c0,c0_l1) V(s_l12_r0_c1,c1_l1) V(s_l12_r0_c2,c2_l1) V(s_l12_r0_c3,c3_l1)
++ V(s_l12_r1_c0,c0_l1) V(s_l12_r1_c1,c1_l1) V(s_l12_r1_c2,c2_l1) V(s_l12_r1_c3,c3_l1)
++ V(s_l23_r0_c0,r0_l2) V(s_l23_r0_c1,r0_l2) V(s_l23_r0_c2,r0_l2) V(s_l23_r0_c3,r0_l2)
++ V(s_l23_r1_c0,r1_l2) V(s_l23_r1_c1,r1_l2) V(s_l23_r1_c2,r1_l2) V(s_l23_r1_c3,r1_l2)
++ V(c0_l1,s_l01_r0_c0) V(c1_l1,s_l01_r0_c1) V(c2_l1,s_l01_r0_c2) V(c3_l1,s_l01_r0_c3)
++ V(c0_l1,s_l01_r1_c0) V(c1_l1,s_l01_r1_c1) V(c2_l1,s_l01_r1_c2) V(c3_l1,s_l01_r1_c3)
++ V(r0_l2,s_l12_r0_c0) V(r0_l2,s_l12_r0_c1) V(r0_l2,s_l12_r0_c2) V(r0_l2,s_l12_r0_c3)
++ V(r1_l2,s_l12_r1_c0) V(r1_l2,s_l12_r1_c1) V(r1_l2,s_l12_r1_c2) V(r1_l2,s_l12_r1_c3)
++ V(c0_l3,s_l23_r0_c0) V(c1_l3,s_l23_r0_c1) V(c2_l3,s_l23_r0_c2) V(c3_l3,s_l23_r0_c3)
++ V(c0_l3,s_l23_r1_c0) V(c1_l3,s_l23_r1_c1) V(c2_l3,s_l23_r1_c2) V(c3_l3,s_l23_r1_c3)
+
+.END

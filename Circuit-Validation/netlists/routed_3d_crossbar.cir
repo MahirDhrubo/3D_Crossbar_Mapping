@@ -1,0 +1,422 @@
+* 3D VTEAM memristor crossbar with switchable routing.
+*
+* This deck tests a possible fix for row-parallel vertical-series MAGIC:
+* keep the 3D row wires, but make shared-column access optional. The L01 and
+* L12 devices can either connect through the shared L1 column wire or through a
+* row-local direct switch that bypasses the shared column node.
+*
+* Wire layers:
+*   layer 3: column wires c0_l3, c1_l3, c2_l3, c3_l3
+*   layer 2: row wires    r0_l2, r1_l2
+*   layer 1: column wires c0_l1, c1_l1, c2_l1, c3_l1
+*   layer 0: row wires    r0_l0, r1_l0
+*
+* Uniform VTEAM polarity is preserved:
+*   L01: p=local L1-side node, n=layer-0 row
+*   L12: p=layer-2 row,       n=local L1-side node
+*   L23: p=local L3-side node, n=layer-2 row
+*
+* Private vertical-series mode for one row/column:
+*   r*_l0 -> L01 -> direct switch -> L12 -> r*_l2 -> L23 -> L3 column switch -> c*_l3
+*
+* Normal column-access mode remains available:
+*   c*_l1 -> L01 access TG -> L01
+*   c*_l1 -> L12 access TG -> L12
+*   c*_l3 -> L23 access TG -> L23
+
+.INCLUDE "netlists/vteam_model.inc"
+
+* VTEAM model parameters.
+.PARAM KON=-216.2
+.PARAM KOFF=0.091
+.PARAM VON=-1.5
+.PARAM VOFF=0.3
+.PARAM WON=0
+.PARAM WOFF=3n
+.PARAM ALPHAON=4
+.PARAM ALPHAOFF=4
+.PARAM RON=1k
+.PARAM ROFF=300k
+
+.PARAM WLOGIC0={WOFF}
+.PARAM WLOGIC1={WON}
+
+* Switch controls still use 0 V = off and VDD_TG = on.
+* The CMOS_TG wrapper name is kept so the rest of the circuit does not change,
+* but it now contains a Xyce ideal bidirectional voltage-controlled switch.
+.PARAM VDD_TG=3.3
+
+.MODEL IDEAL_BIDIR_SW VSWITCH(RON=1u ROFF=1e15 VON=2 VOFF=1)
+
+.SUBCKT CMOS_TG a b en enb vdd vss
+S_TG a b en vss IDEAL_BIDIR_SW
+.ENDS CMOS_TG
+
+VDDTG vdd_tg 0 {VDD_TG}
+
+* Cell initial conditions. Current c0 values mirror the active 3D experiment.
+.PARAM INIT_L01_R0_C0={WLOGIC0}
+.PARAM INIT_L01_R0_C1={WLOGIC1}
+.PARAM INIT_L01_R0_C2={WLOGIC0}
+.PARAM INIT_L01_R0_C3={WLOGIC0}
+.PARAM INIT_L01_R1_C0={WLOGIC1}
+.PARAM INIT_L01_R1_C1={WLOGIC0}
+.PARAM INIT_L01_R1_C2={WLOGIC0}
+.PARAM INIT_L01_R1_C3={WLOGIC0}
+
+.PARAM INIT_L12_R0_C0={WLOGIC0}
+.PARAM INIT_L12_R0_C1={WLOGIC0}
+.PARAM INIT_L12_R0_C2={WLOGIC0}
+.PARAM INIT_L12_R0_C3={WLOGIC0}
+.PARAM INIT_L12_R1_C0={WLOGIC1}
+.PARAM INIT_L12_R1_C1={WLOGIC0}
+.PARAM INIT_L12_R1_C2={WLOGIC1}
+.PARAM INIT_L12_R1_C3={WLOGIC1}
+
+.PARAM INIT_L23_R0_C0={WLOGIC0}
+.PARAM INIT_L23_R0_C1={WLOGIC0}
+.PARAM INIT_L23_R0_C2={WLOGIC1}
+.PARAM INIT_L23_R0_C3={WLOGIC1}
+.PARAM INIT_L23_R1_C0={WLOGIC0}
+.PARAM INIT_L23_R1_C1={WLOGIC1}
+.PARAM INIT_L23_R1_C2={WLOGIC1}
+.PARAM INIT_L23_R1_C3={WLOGIC1}
+
+* Switch controls for shared-column access.
+* Current experiment: L23-plane NOR with c0/c1 as inputs and c2 as output.
+.PARAM ACC_L01_C0=0
+.PARAM ACC_L01_C1=0
+.PARAM ACC_L01_C2=0
+.PARAM ACC_L01_C3=0
+.PARAM ACC_L12_C0=0
+.PARAM ACC_L12_C1=0
+.PARAM ACC_L12_C2=0
+.PARAM ACC_L12_C3=0
+.PARAM ACC_L23_C0=1
+.PARAM ACC_L23_C1=1
+.PARAM ACC_L23_C2=1
+.PARAM ACC_L23_C3=0
+
+* Direct private links between the L01 upper node and L12 lower node.
+.PARAM DIR_L0112_C0=0
+.PARAM DIR_L0112_C1=0
+.PARAM DIR_L0112_C2=0
+.PARAM DIR_L0112_C3=0
+
+* Shared pulse timing for all external line drivers.
+.PARAM T_RISE_START=1n
+.PARAM T_PULSE_START=1.1n
+.PARAM T_PULSE_END=3.1n
+.PARAM T_FALL_END=3.2n
+.PARAM T_STOP=5n
+
+* External physical-line voltage amplitudes.
+* A value of 0 V means ground only when the corresponding DRV_EN_* is 1.
+.PARAM V_L0_R0=0
+.PARAM V_L0_R1=0
+.PARAM V_L1_C0=0
+.PARAM V_L1_C1=0
+.PARAM V_L1_C2=0
+.PARAM V_L1_C3=0
+.PARAM V_L2_R0=0
+.PARAM V_L2_R1=0
+.PARAM V_L3_C0=-1
+.PARAM V_L3_C1=-1
+.PARAM V_L3_C2=0
+.PARAM V_L3_C3=0
+
+* External driver enables. These are also ideal bidirectional switches.
+.PARAM DRV_EN_L0_R0=0
+.PARAM DRV_EN_L0_R1=0
+.PARAM DRV_EN_L1_C0=0
+.PARAM DRV_EN_L1_C1=0
+.PARAM DRV_EN_L1_C2=0
+.PARAM DRV_EN_L1_C3=0
+.PARAM DRV_EN_L2_R0=0
+.PARAM DRV_EN_L2_R1=0
+.PARAM DRV_EN_L3_C0=1
+.PARAM DRV_EN_L3_C1=1
+.PARAM DRV_EN_L3_C2=1
+.PARAM DRV_EN_L3_C3=0
+
+.PARAM R_LEAK=1e12
+
+* Ideal-switch control rails and complements. Complements are retained for
+* compatibility with the old CMOS_TG pin list, although the ideal switch only
+* needs the positive enable node.
+VACC_L01_C0 acc_l01_c0 0 {ACC_L01_C0*VDD_TG}
+VACC_L01_C0_B acc_l01_c0_b 0 {(1-ACC_L01_C0)*VDD_TG}
+VACC_L01_C1 acc_l01_c1 0 {ACC_L01_C1*VDD_TG}
+VACC_L01_C1_B acc_l01_c1_b 0 {(1-ACC_L01_C1)*VDD_TG}
+VACC_L01_C2 acc_l01_c2 0 {ACC_L01_C2*VDD_TG}
+VACC_L01_C2_B acc_l01_c2_b 0 {(1-ACC_L01_C2)*VDD_TG}
+VACC_L01_C3 acc_l01_c3 0 {ACC_L01_C3*VDD_TG}
+VACC_L01_C3_B acc_l01_c3_b 0 {(1-ACC_L01_C3)*VDD_TG}
+
+VACC_L12_C0 acc_l12_c0 0 {ACC_L12_C0*VDD_TG}
+VACC_L12_C0_B acc_l12_c0_b 0 {(1-ACC_L12_C0)*VDD_TG}
+VACC_L12_C1 acc_l12_c1 0 {ACC_L12_C1*VDD_TG}
+VACC_L12_C1_B acc_l12_c1_b 0 {(1-ACC_L12_C1)*VDD_TG}
+VACC_L12_C2 acc_l12_c2 0 {ACC_L12_C2*VDD_TG}
+VACC_L12_C2_B acc_l12_c2_b 0 {(1-ACC_L12_C2)*VDD_TG}
+VACC_L12_C3 acc_l12_c3 0 {ACC_L12_C3*VDD_TG}
+VACC_L12_C3_B acc_l12_c3_b 0 {(1-ACC_L12_C3)*VDD_TG}
+
+VACC_L23_C0 acc_l23_c0 0 {ACC_L23_C0*VDD_TG}
+VACC_L23_C0_B acc_l23_c0_b 0 {(1-ACC_L23_C0)*VDD_TG}
+VACC_L23_C1 acc_l23_c1 0 {ACC_L23_C1*VDD_TG}
+VACC_L23_C1_B acc_l23_c1_b 0 {(1-ACC_L23_C1)*VDD_TG}
+VACC_L23_C2 acc_l23_c2 0 {ACC_L23_C2*VDD_TG}
+VACC_L23_C2_B acc_l23_c2_b 0 {(1-ACC_L23_C2)*VDD_TG}
+VACC_L23_C3 acc_l23_c3 0 {ACC_L23_C3*VDD_TG}
+VACC_L23_C3_B acc_l23_c3_b 0 {(1-ACC_L23_C3)*VDD_TG}
+
+VDIR_L0112_C0 dir_l0112_c0 0 {DIR_L0112_C0*VDD_TG}
+VDIR_L0112_C0_B dir_l0112_c0_b 0 {(1-DIR_L0112_C0)*VDD_TG}
+VDIR_L0112_C1 dir_l0112_c1 0 {DIR_L0112_C1*VDD_TG}
+VDIR_L0112_C1_B dir_l0112_c1_b 0 {(1-DIR_L0112_C1)*VDD_TG}
+VDIR_L0112_C2 dir_l0112_c2 0 {DIR_L0112_C2*VDD_TG}
+VDIR_L0112_C2_B dir_l0112_c2_b 0 {(1-DIR_L0112_C2)*VDD_TG}
+VDIR_L0112_C3 dir_l0112_c3 0 {DIR_L0112_C3*VDD_TG}
+VDIR_L0112_C3_B dir_l0112_c3_b 0 {(1-DIR_L0112_C3)*VDD_TG}
+
+VDRV_EN_L0_R0 drv_en_l0_r0 0 {DRV_EN_L0_R0*VDD_TG}
+VDRV_EN_L0_R0_B drv_en_l0_r0_b 0 {(1-DRV_EN_L0_R0)*VDD_TG}
+VDRV_EN_L0_R1 drv_en_l0_r1 0 {DRV_EN_L0_R1*VDD_TG}
+VDRV_EN_L0_R1_B drv_en_l0_r1_b 0 {(1-DRV_EN_L0_R1)*VDD_TG}
+VDRV_EN_L1_C0 drv_en_l1_c0 0 {DRV_EN_L1_C0*VDD_TG}
+VDRV_EN_L1_C0_B drv_en_l1_c0_b 0 {(1-DRV_EN_L1_C0)*VDD_TG}
+VDRV_EN_L1_C1 drv_en_l1_c1 0 {DRV_EN_L1_C1*VDD_TG}
+VDRV_EN_L1_C1_B drv_en_l1_c1_b 0 {(1-DRV_EN_L1_C1)*VDD_TG}
+VDRV_EN_L1_C2 drv_en_l1_c2 0 {DRV_EN_L1_C2*VDD_TG}
+VDRV_EN_L1_C2_B drv_en_l1_c2_b 0 {(1-DRV_EN_L1_C2)*VDD_TG}
+VDRV_EN_L1_C3 drv_en_l1_c3 0 {DRV_EN_L1_C3*VDD_TG}
+VDRV_EN_L1_C3_B drv_en_l1_c3_b 0 {(1-DRV_EN_L1_C3)*VDD_TG}
+VDRV_EN_L2_R0 drv_en_l2_r0 0 {DRV_EN_L2_R0*VDD_TG}
+VDRV_EN_L2_R0_B drv_en_l2_r0_b 0 {(1-DRV_EN_L2_R0)*VDD_TG}
+VDRV_EN_L2_R1 drv_en_l2_r1 0 {DRV_EN_L2_R1*VDD_TG}
+VDRV_EN_L2_R1_B drv_en_l2_r1_b 0 {(1-DRV_EN_L2_R1)*VDD_TG}
+VDRV_EN_L3_C0 drv_en_l3_c0 0 {DRV_EN_L3_C0*VDD_TG}
+VDRV_EN_L3_C0_B drv_en_l3_c0_b 0 {(1-DRV_EN_L3_C0)*VDD_TG}
+VDRV_EN_L3_C1 drv_en_l3_c1 0 {DRV_EN_L3_C1*VDD_TG}
+VDRV_EN_L3_C1_B drv_en_l3_c1_b 0 {(1-DRV_EN_L3_C1)*VDD_TG}
+VDRV_EN_L3_C2 drv_en_l3_c2 0 {DRV_EN_L3_C2*VDD_TG}
+VDRV_EN_L3_C2_B drv_en_l3_c2_b 0 {(1-DRV_EN_L3_C2)*VDD_TG}
+VDRV_EN_L3_C3 drv_en_l3_c3 0 {DRV_EN_L3_C3*VDD_TG}
+VDRV_EN_L3_C3_B drv_en_l3_c3_b 0 {(1-DRV_EN_L3_C3)*VDD_TG}
+
+* External line voltage sources drive private driver nodes.
+VDRV_L0_R0 drv_l0_r0 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L0_R0}
++ {T_PULSE_END} {V_L0_R0}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L0_R1 drv_l0_r1 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L0_R1}
++ {T_PULSE_END} {V_L0_R1}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L1_C0 drv_l1_c0 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L1_C0}
++ {T_PULSE_END} {V_L1_C0}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L1_C1 drv_l1_c1 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L1_C1}
++ {T_PULSE_END} {V_L1_C1}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L1_C2 drv_l1_c2 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L1_C2}
++ {T_PULSE_END} {V_L1_C2}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L1_C3 drv_l1_c3 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L1_C3}
++ {T_PULSE_END} {V_L1_C3}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L2_R0 drv_l2_r0 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L2_R0}
++ {T_PULSE_END} {V_L2_R0}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L2_R1 drv_l2_r1 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L2_R1}
++ {T_PULSE_END} {V_L2_R1}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L3_C0 drv_l3_c0 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L3_C0}
++ {T_PULSE_END} {V_L3_C0}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L3_C1 drv_l3_c1 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L3_C1}
++ {T_PULSE_END} {V_L3_C1}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L3_C2 drv_l3_c2 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L3_C2}
++ {T_PULSE_END} {V_L3_C2}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+VDRV_L3_C3 drv_l3_c3 0 PWL(
++ 0 0
++ {T_RISE_START} 0
++ {T_PULSE_START} {V_L3_C3}
++ {T_PULSE_END} {V_L3_C3}
++ {T_FALL_END} 0
++ {T_STOP} 0
++)
+
+* Driver-connect switches. DRV_EN_* = 0 leaves wire floating except leak.
+XDRV_L0_R0 drv_l0_r0 r0_l0 drv_en_l0_r0 drv_en_l0_r0_b vdd_tg 0 CMOS_TG
+XDRV_L0_R1 drv_l0_r1 r1_l0 drv_en_l0_r1 drv_en_l0_r1_b vdd_tg 0 CMOS_TG
+XDRV_L1_C0 drv_l1_c0 c0_l1 drv_en_l1_c0 drv_en_l1_c0_b vdd_tg 0 CMOS_TG
+XDRV_L1_C1 drv_l1_c1 c1_l1 drv_en_l1_c1 drv_en_l1_c1_b vdd_tg 0 CMOS_TG
+XDRV_L1_C2 drv_l1_c2 c2_l1 drv_en_l1_c2 drv_en_l1_c2_b vdd_tg 0 CMOS_TG
+XDRV_L1_C3 drv_l1_c3 c3_l1 drv_en_l1_c3 drv_en_l1_c3_b vdd_tg 0 CMOS_TG
+XDRV_L2_R0 drv_l2_r0 r0_l2 drv_en_l2_r0 drv_en_l2_r0_b vdd_tg 0 CMOS_TG
+XDRV_L2_R1 drv_l2_r1 r1_l2 drv_en_l2_r1 drv_en_l2_r1_b vdd_tg 0 CMOS_TG
+XDRV_L3_C0 drv_l3_c0 c0_l3 drv_en_l3_c0 drv_en_l3_c0_b vdd_tg 0 CMOS_TG
+XDRV_L3_C1 drv_l3_c1 c1_l3 drv_en_l3_c1 drv_en_l3_c1_b vdd_tg 0 CMOS_TG
+XDRV_L3_C2 drv_l3_c2 c2_l3 drv_en_l3_c2 drv_en_l3_c2_b vdd_tg 0 CMOS_TG
+XDRV_L3_C3 drv_l3_c3 c3_l3 drv_en_l3_c3 drv_en_l3_c3_b vdd_tg 0 CMOS_TG
+
+* Physical wire numerical leaks only.
+RLEAK_L0_R0 r0_l0 0 {R_LEAK}
+RLEAK_L0_R1 r1_l0 0 {R_LEAK}
+RLEAK_L1_C0 c0_l1 0 {R_LEAK}
+RLEAK_L1_C1 c1_l1 0 {R_LEAK}
+RLEAK_L1_C2 c2_l1 0 {R_LEAK}
+RLEAK_L1_C3 c3_l1 0 {R_LEAK}
+RLEAK_L2_R0 r0_l2 0 {R_LEAK}
+RLEAK_L2_R1 r1_l2 0 {R_LEAK}
+RLEAK_L3_C0 c0_l3 0 {R_LEAK}
+RLEAK_L3_C1 c1_l3 0 {R_LEAK}
+RLEAK_L3_C2 c2_l3 0 {R_LEAK}
+RLEAK_L3_C3 c3_l3 0 {R_LEAK}
+
+* Shared-column access switches.
+XL01_ACC_R0_C0 c0_l1 m_l01_r0_c0_p acc_l01_c0 acc_l01_c0_b vdd_tg 0 CMOS_TG
+XL01_ACC_R0_C1 c1_l1 m_l01_r0_c1_p acc_l01_c1 acc_l01_c1_b vdd_tg 0 CMOS_TG
+XL01_ACC_R0_C2 c2_l1 m_l01_r0_c2_p acc_l01_c2 acc_l01_c2_b vdd_tg 0 CMOS_TG
+XL01_ACC_R0_C3 c3_l1 m_l01_r0_c3_p acc_l01_c3 acc_l01_c3_b vdd_tg 0 CMOS_TG
+XL01_ACC_R1_C0 c0_l1 m_l01_r1_c0_p acc_l01_c0 acc_l01_c0_b vdd_tg 0 CMOS_TG
+XL01_ACC_R1_C1 c1_l1 m_l01_r1_c1_p acc_l01_c1 acc_l01_c1_b vdd_tg 0 CMOS_TG
+XL01_ACC_R1_C2 c2_l1 m_l01_r1_c2_p acc_l01_c2 acc_l01_c2_b vdd_tg 0 CMOS_TG
+XL01_ACC_R1_C3 c3_l1 m_l01_r1_c3_p acc_l01_c3 acc_l01_c3_b vdd_tg 0 CMOS_TG
+
+XL12_ACC_R0_C0 c0_l1 m_l12_r0_c0_n acc_l12_c0 acc_l12_c0_b vdd_tg 0 CMOS_TG
+XL12_ACC_R0_C1 c1_l1 m_l12_r0_c1_n acc_l12_c1 acc_l12_c1_b vdd_tg 0 CMOS_TG
+XL12_ACC_R0_C2 c2_l1 m_l12_r0_c2_n acc_l12_c2 acc_l12_c2_b vdd_tg 0 CMOS_TG
+XL12_ACC_R0_C3 c3_l1 m_l12_r0_c3_n acc_l12_c3 acc_l12_c3_b vdd_tg 0 CMOS_TG
+XL12_ACC_R1_C0 c0_l1 m_l12_r1_c0_n acc_l12_c0 acc_l12_c0_b vdd_tg 0 CMOS_TG
+XL12_ACC_R1_C1 c1_l1 m_l12_r1_c1_n acc_l12_c1 acc_l12_c1_b vdd_tg 0 CMOS_TG
+XL12_ACC_R1_C2 c2_l1 m_l12_r1_c2_n acc_l12_c2 acc_l12_c2_b vdd_tg 0 CMOS_TG
+XL12_ACC_R1_C3 c3_l1 m_l12_r1_c3_n acc_l12_c3 acc_l12_c3_b vdd_tg 0 CMOS_TG
+
+XL23_ACC_R0_C0 c0_l3 m_l23_r0_c0_p acc_l23_c0 acc_l23_c0_b vdd_tg 0 CMOS_TG
+XL23_ACC_R0_C1 c1_l3 m_l23_r0_c1_p acc_l23_c1 acc_l23_c1_b vdd_tg 0 CMOS_TG
+XL23_ACC_R0_C2 c2_l3 m_l23_r0_c2_p acc_l23_c2 acc_l23_c2_b vdd_tg 0 CMOS_TG
+XL23_ACC_R0_C3 c3_l3 m_l23_r0_c3_p acc_l23_c3 acc_l23_c3_b vdd_tg 0 CMOS_TG
+XL23_ACC_R1_C0 c0_l3 m_l23_r1_c0_p acc_l23_c0 acc_l23_c0_b vdd_tg 0 CMOS_TG
+XL23_ACC_R1_C1 c1_l3 m_l23_r1_c1_p acc_l23_c1 acc_l23_c1_b vdd_tg 0 CMOS_TG
+XL23_ACC_R1_C2 c2_l3 m_l23_r1_c2_p acc_l23_c2 acc_l23_c2_b vdd_tg 0 CMOS_TG
+XL23_ACC_R1_C3 c3_l3 m_l23_r1_c3_p acc_l23_c3 acc_l23_c3_b vdd_tg 0 CMOS_TG
+
+* Row-local direct links that bypass the shared layer-1 column wire.
+XDIR_L0112_R0_C0 m_l01_r0_c0_p m_l12_r0_c0_n dir_l0112_c0 dir_l0112_c0_b vdd_tg 0 CMOS_TG
+XDIR_L0112_R0_C1 m_l01_r0_c1_p m_l12_r0_c1_n dir_l0112_c1 dir_l0112_c1_b vdd_tg 0 CMOS_TG
+XDIR_L0112_R0_C2 m_l01_r0_c2_p m_l12_r0_c2_n dir_l0112_c2 dir_l0112_c2_b vdd_tg 0 CMOS_TG
+XDIR_L0112_R0_C3 m_l01_r0_c3_p m_l12_r0_c3_n dir_l0112_c3 dir_l0112_c3_b vdd_tg 0 CMOS_TG
+XDIR_L0112_R1_C0 m_l01_r1_c0_p m_l12_r1_c0_n dir_l0112_c0 dir_l0112_c0_b vdd_tg 0 CMOS_TG
+XDIR_L0112_R1_C1 m_l01_r1_c1_p m_l12_r1_c1_n dir_l0112_c1 dir_l0112_c1_b vdd_tg 0 CMOS_TG
+XDIR_L0112_R1_C2 m_l01_r1_c2_p m_l12_r1_c2_n dir_l0112_c2 dir_l0112_c2_b vdd_tg 0 CMOS_TG
+XDIR_L0112_R1_C3 m_l01_r1_c3_p m_l12_r1_c3_n dir_l0112_c3 dir_l0112_c3_b vdd_tg 0 CMOS_TG
+
+* L01 VTEAM cells.
+Xl01r0c0 m_l01_r0_c0_p r0_l0 x_l01_r0_c0 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L01_R0_C0} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl01r0c1 m_l01_r0_c1_p r0_l0 x_l01_r0_c1 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L01_R0_C1} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl01r0c2 m_l01_r0_c2_p r0_l0 x_l01_r0_c2 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L01_R0_C2} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl01r0c3 m_l01_r0_c3_p r0_l0 x_l01_r0_c3 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L01_R0_C3} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl01r1c0 m_l01_r1_c0_p r1_l0 x_l01_r1_c0 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L01_R1_C0} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl01r1c1 m_l01_r1_c1_p r1_l0 x_l01_r1_c1 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L01_R1_C1} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl01r1c2 m_l01_r1_c2_p r1_l0 x_l01_r1_c2 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L01_R1_C2} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl01r1c3 m_l01_r1_c3_p r1_l0 x_l01_r1_c3 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L01_R1_C3} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+
+* L12 VTEAM cells.
+Xl12r0c0 r0_l2 m_l12_r0_c0_n x_l12_r0_c0 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L12_R0_C0} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl12r0c1 r0_l2 m_l12_r0_c1_n x_l12_r0_c1 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L12_R0_C1} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl12r0c2 r0_l2 m_l12_r0_c2_n x_l12_r0_c2 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L12_R0_C2} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl12r0c3 r0_l2 m_l12_r0_c3_n x_l12_r0_c3 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L12_R0_C3} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl12r1c0 r1_l2 m_l12_r1_c0_n x_l12_r1_c0 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L12_R1_C0} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl12r1c1 r1_l2 m_l12_r1_c1_n x_l12_r1_c1 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L12_R1_C1} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl12r1c2 r1_l2 m_l12_r1_c2_n x_l12_r1_c2 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L12_R1_C2} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl12r1c3 r1_l2 m_l12_r1_c3_n x_l12_r1_c3 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L12_R1_C3} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+
+* L23 VTEAM cells.
+Xl23r0c0 m_l23_r0_c0_p r0_l2 x_l23_r0_c0 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L23_R0_C0} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl23r0c1 m_l23_r0_c1_p r0_l2 x_l23_r0_c1 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L23_R0_C1} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl23r0c2 m_l23_r0_c2_p r0_l2 x_l23_r0_c2 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L23_R0_C2} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl23r0c3 m_l23_r0_c3_p r0_l2 x_l23_r0_c3 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L23_R0_C3} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl23r1c0 m_l23_r1_c0_p r1_l2 x_l23_r1_c0 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L23_R1_C0} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl23r1c1 m_l23_r1_c1_p r1_l2 x_l23_r1_c1 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L23_R1_C1} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl23r1c2 m_l23_r1_c2_p r1_l2 x_l23_r1_c2 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L23_R1_C2} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+Xl23r1c3 m_l23_r1_c3_p r1_l2 x_l23_r1_c3 VTEAM ron={RON} roff={ROFF} won={WON} woff={WOFF} winit={INIT_L23_R1_C3} von={VON} voff={VOFF} kon={KON} koff={KOFF} alphaon={ALPHAON} alphaoff={ALPHAOFF}
+
+.TRAN 1ps {T_STOP} 0 1ps
+.PRINT TRAN FORMAT=CSV
++ V(r0_l0) V(r1_l0)
++ V(c0_l1) V(c1_l1) V(c2_l1) V(c3_l1)
++ V(r0_l2) V(r1_l2)
++ V(c0_l3) V(c1_l3) V(c2_l3) V(c3_l3)
++ V(acc_l23_c0) V(acc_l23_c1) V(acc_l23_c2) V(dir_l0112_c2)
++ V(m_l01_r0_c0_p) V(m_l01_r0_c1_p) V(m_l01_r0_c2_p) V(m_l01_r0_c3_p)
++ V(m_l01_r1_c0_p) V(m_l01_r1_c1_p) V(m_l01_r1_c2_p) V(m_l01_r1_c3_p)
++ V(m_l12_r0_c0_n) V(m_l12_r0_c1_n) V(m_l12_r0_c2_n) V(m_l12_r0_c3_n)
++ V(m_l12_r1_c0_n) V(m_l12_r1_c1_n) V(m_l12_r1_c2_n) V(m_l12_r1_c3_n)
++ V(m_l23_r0_c0_p) V(m_l23_r0_c1_p) V(m_l23_r0_c2_p) V(m_l23_r0_c3_p)
++ V(m_l23_r1_c0_p) V(m_l23_r1_c1_p) V(m_l23_r1_c2_p) V(m_l23_r1_c3_p)
++ V(x_l01_r0_c0) V(x_l01_r0_c1) V(x_l01_r0_c2) V(x_l01_r0_c3)
++ V(x_l01_r1_c0) V(x_l01_r1_c1) V(x_l01_r1_c2) V(x_l01_r1_c3)
++ V(x_l12_r0_c0) V(x_l12_r0_c1) V(x_l12_r0_c2) V(x_l12_r0_c3)
++ V(x_l12_r1_c0) V(x_l12_r1_c1) V(x_l12_r1_c2) V(x_l12_r1_c3)
++ V(x_l23_r0_c0) V(x_l23_r0_c1) V(x_l23_r0_c2) V(x_l23_r0_c3)
++ V(x_l23_r1_c0) V(x_l23_r1_c1) V(x_l23_r1_c2) V(x_l23_r1_c3)
+
+.END

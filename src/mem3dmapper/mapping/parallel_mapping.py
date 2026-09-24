@@ -480,8 +480,8 @@ def _heuristic_choose_nor_inv_row(
                     free_cells.append((x,y))
 
                 # this need verification if the replaced net is being used by other ops in the same cycle or not
-                elif state.is_net_replacable((x,y)):
-                    replaceable_cells.append((x,y))
+                # elif state.is_net_replacable((x,y)):
+                #     replaceable_cells.append((x,y))
 
         new_columns = max(missing + 1 - len(free_cells), 0)
 
