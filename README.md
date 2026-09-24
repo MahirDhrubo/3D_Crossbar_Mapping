@@ -53,5 +53,3 @@ python -m mem3dmapper.cli.map_2d public-data/table2/2d/<file>.blif <out.json> --
 ```
 
 Rows (Layers) per component, all at 512 columns: 2-bit Full Adder / 4-bit Ripple-Carry Adder / 4x4 Dot Prod. / MatVec Partial Prod. = 3; 4x4 MatVec = 6. `Gates = NOR + NOT + AND` and `Moves = COPY` from the output JSON's `operations_count`.
-
-`map_2d.py` does not run `mem3dmapper.mapping.validator` — its geometry and concurrent-scheduling checks are written for the 3D crossbar model and don't apply to a 2D mapping.
