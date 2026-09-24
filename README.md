@@ -55,7 +55,3 @@ python -m mem3dmapper.cli.map_2d public-data/table2/2d/<file>.blif <out.json> --
 Rows (Layers) per component, all at 512 columns: 2-bit Full Adder / 4-bit Ripple-Carry Adder / 4x4 Dot Prod. / MatVec Partial Prod. = 3; 4x4 MatVec = 6. `Gates = NOR + NOT + AND` and `Moves = COPY` from the output JSON's `operations_count`.
 
 `map_2d.py` does not run `mem3dmapper.mapping.validator` — its geometry and concurrent-scheduling checks are written for the 3D crossbar model and don't apply to a 2D mapping.
-
-## Known Issues
-
-- `mem3dmapper.mapping.parallel_mapping` (the 3D concurrent scheduler) previously had a validator false-positive (`overwrites live net ... with N use(s) remaining`) that misfired whenever a live net's copy was overwritten by an operation that also read that same net elsewhere in the same cycle, even when another copy of it survived. Fixed in `mapping/validator.py`; confirmed against the previously-failing `4bit_adder.blif` at `--rows 3` (now succeeds, 41 gates matching Table II) and the existing unit tests.
