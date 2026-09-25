@@ -20,6 +20,14 @@ A small set of BLIF netlists (plus one device-characterization CSV), sufficient 
 - `public-data/table1/` — inputs for Table I (32-bit fixed-point multiplication comparison)
 - `public-data/table2/2d/`, `public-data/table2/3d/` — inputs for Table II (2D vs. 3D mapping overhead), one BLIF per component per side
 
+## `Circuit-Validation/`
+
+The Xyce/SPICE circuit-validation artifact is provided in `Circuit-Validation/`.
+It contains the VTEAM model, naive and routed 3D crossbar netlists, sweep
+scripts, generated latency/energy CSVs, and validation figures used for the
+circuit-level results. See `Circuit-Validation/README.md` for the commands to
+rerun the simulations or regenerate the figures.
+
 ## Pipeline: BLIF -> mapping JSON -> energy/latency
 
 1. Map a BLIF netlist onto a crossbar and write the execution trace to a JSON file:
