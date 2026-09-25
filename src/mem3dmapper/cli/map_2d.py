@@ -5,6 +5,11 @@ execution trace -- per-cycle operations, per-gate-type counts, and peak
 live cell count -- to a JSON file, in the same format as cli/main.py's 3D
 mapper (consumable by cli/energy_latency_calculator.py).
 
+Only --columns is a real constraint here: it's the fixed row width (the 2D
+architectural limit). The mapper starts with a single row and appends more
+as needed, so there is no --rows option -- the row count is an output, not
+an input.
+
 mem3dmapper.mapping.validator is not run here: its geometry and
 concurrent-scheduling checks are written for the 3D crossbar model and do
 not apply to a 2D mapping.
@@ -27,8 +32,9 @@ from mem3dmapper.netlist.parser import parse_netlist
 def run(
     blif_path: Path,
     output_json: Path,
-    config: MappingConfig,
+    total_columns: int,
 ) -> MappingState:
+    config = MappingConfig(total_rows=1, total_columns=total_columns)
     netlist = parse_netlist(str(blif_path))
     print(f"{netlist.name}: {len(netlist.gates)} gates")
 
@@ -62,13 +68,10 @@ def main() -> None:
     )
     parser.add_argument("blif_path", type=Path, help="Input BLIF netlist file (NOR-NOT-only synthesis).")
     parser.add_argument("output_json", type=Path, help="Path to write the mapping-result JSON file.")
-    parser.add_argument("--rows", type=int, default=1, help="Crossbar rows (default: 1 -- a 2D crossbar is a single row).")
-    parser.add_argument("--columns", type=int, default=512, help="Crossbar columns (default: 512).")
+    parser.add_argument("--columns", type=int, default=512, help="Crossbar row width (default: 512).")
     args = parser.parse_args()
 
-    config = MappingConfig(total_rows=args.rows, total_columns=args.columns)
-
-    run(args.blif_path, args.output_json, config)
+    run(args.blif_path, args.output_json, args.columns)
 
 
 if __name__ == "__main__":

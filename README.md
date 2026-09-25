@@ -28,20 +28,90 @@ scripts, generated latency/energy CSVs, and validation figures used for the
 circuit-level results. See `Circuit-Validation/README.md` for the commands to
 rerun the simulations or regenerate the figures.
 
-## Pipeline: BLIF -> mapping JSON -> energy/latency
+## Scripts
 
-1. Map a BLIF netlist onto a crossbar and write the execution trace to a JSON file:
+The core pipeline is: map a BLIF netlist to a mapping-result JSON (`main.py` for 3D, `map_2d.py` for 2D), then optionally compute energy/latency from that JSON (`energy_latency_calculator.py`). The remaining scripts are standalone tools.
 
-   ```bash
-   python -m mem3dmapper.cli.main <input.blif> <output.json> --rows <R> --columns <C>      # 3D, PRISM's concurrent scheduler
-   python -m mem3dmapper.cli.map_2d <input.blif> <output.json> --rows <R> --columns <C>    # 2D, sequential NOR-NOT-only heuristic
-   ```
+### `mem3dmapper.cli.main` — 3D mapping (PRISM's concurrent scheduler)
 
-2. Compute total energy and latency from that JSON:
+```bash
+python -m mem3dmapper.cli.main <input.blif> <output.json> [options]
+```
 
-   ```bash
-   python -m mem3dmapper.cli.energy_latency_calculator <output.json>
-   ```
+| Flag | Default | Description |
+|---|---|---|
+| `--rows` | 6 | Crossbar rows / stacked layers |
+| `--columns` | 512 | Crossbar columns |
+| `--cluster-window` | 21 | Cost-model cluster window |
+| `--alpha` | 0.6 | Cost-model weight alpha |
+| `--beta` | 0.4 | Cost-model weight beta |
+| `--gamma` | 0.0 | Cost-model weight gamma |
+| `--skip-validation` | off | Skip validating the mapping against the netlist |
+| `--dag-dot PATH` | none | Write the netlist's DAG as a `.dot` file |
+| `--dag-image PATH` | none | Render the DAG image (requires `--dag-dot`; format inferred from the file extension, e.g. `.png`/`.svg`) |
+
+### `mem3dmapper.cli.map_2d` — 2D mapping (sequential NOR-NOT-only heuristic)
+
+```bash
+python -m mem3dmapper.cli.map_2d <input.blif> <output.json> [options]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--columns` | 512 | Crossbar row width |
+
+the mapper starts at one crossbar and appends more as needed, so the crossbar count is part of the output, not an input.
+
+### `mem3dmapper.cli.energy_latency_calculator` — energy/latency from a mapping JSON
+
+```bash
+python -m mem3dmapper.cli.energy_latency_calculator <mapping.json> [options]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--cycle-time-ns` | 0.1 | Per-cycle time in ns |
+
+### `mem3dmapper.cli.count_gates` — gate-count comparison between two BLIF directories
+
+```bash
+python -m mem3dmapper.cli.count_gates <dir1> <dir2> [options]
+```
+
+Parses every matching file in each directory (paired by sort order) and prints the fractional gate-count reduction of `dir1` relative to `dir2` for each pair.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--ext` | `.blif` | File extension to look for |
+
+### `mem3dmapper.cli.multiplier32_2d_baseline_comparison` — Table I cost model
+
+```bash
+python -m mem3dmapper.cli.multiplier32_2d_baseline_comparison [options]
+```
+
+Estimates energy, latency, and crossbar count for a 32-bit multiplier on SIMPLER/LOGIC/AUTO (2D) vs. PRISM (3D), from real device-level gate costs.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--gate-costs-csv` | `data/logic_lowest_energy_best_points.csv` | Device-characterization CSV (see `load_gate_costs`) |
+| `--output-csv` | `data/runs/multiplier32_2d_baseline_energy_latency.csv` | Where to write the full per-framework breakdown |
+| `--row-cap` | 512 | Cells per crossbar/row (informational only) |
+| `--latency-bound` | 0.1 | Flat per-operation latency bound in ns |
+
+### `mem3dmapper.cli.visualize` — optional mapping-trace visualizer
+
+```bash
+python -m mem3dmapper.cli.visualize <mapping.json> [--frames DIR] [--mp4 PATH] [--fps N]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--frames DIR` | none | Write one PNG frame per cycle to this directory |
+| `--mp4 PATH` | none | Write an MP4 video of the mapping trace |
+| `--fps` | 4 | Frames per second for the MP4 |
+
+Requires `imageio`/`imageio-ffmpeg` for `--mp4` and `ipywidgets`/`ipython` for the notebook widget mode (see Requirements). At least one of `--frames`/`--mp4` is required.
 
 ## Reproducing Table I (32-bit Fixed-Point Multiplication)
 
@@ -56,8 +126,15 @@ python -m mem3dmapper.cli.multiplier32_2d_baseline_comparison --gate-costs-csv p
 ## Reproducing Table II (2D vs. 3D Mapping Overhead, 512-Column Crossbars)
 
 ```bash
-python -m mem3dmapper.cli.main   public-data/table2/3d/<file>.blif <out.json> --rows <R> --columns 512   # 3D: Gates, Moves(=0 by construction)
-python -m mem3dmapper.cli.map_2d public-data/table2/2d/<file>.blif <out.json> --rows <R> --columns 512   # 2D: Gates, Moves
-```
+python -m mem3dmapper.cli.main   public-data/table2/3d/2bit_adder.blif      data/runs/table2/3d/2bit_adder.json      --rows 3 --columns 512
+python -m mem3dmapper.cli.main   public-data/table2/3d/4bit_adder.blif      data/runs/table2/3d/4bit_adder.json      --rows 3 --columns 512
+python -m mem3dmapper.cli.main   public-data/table2/3d/dot4_4bit.blif       data/runs/table2/3d/dot4_4bit.json       --rows 3 --columns 512
+python -m mem3dmapper.cli.main   public-data/table2/3d/matvec_8bit_pp.blif  data/runs/table2/3d/matvec_8bit_pp.json  --rows 3 --columns 512
+python -m mem3dmapper.cli.main   public-data/table2/3d/matvec4x4_8bit.blif  data/runs/table2/3d/matvec4x4_8bit.json  --rows 6 --columns 512
 
-Rows (Layers) per component, all at 512 columns: 2-bit Full Adder / 4-bit Ripple-Carry Adder / 4x4 Dot Prod. / MatVec Partial Prod. = 3; 4x4 MatVec = 6. `Gates = NOR + NOT + AND` and `Moves = COPY` from the output JSON's `operations_count`.
+python -m mem3dmapper.cli.map_2d public-data/table2/2d/2bit_adder_nor.blif      data/runs/table2/2d/2bit_adder_nor.json      --columns 512
+python -m mem3dmapper.cli.map_2d public-data/table2/2d/4bit_adder_nor.blif      data/runs/table2/2d/4bit_adder_nor.json      --columns 512
+python -m mem3dmapper.cli.map_2d public-data/table2/2d/dot4_4bit_nor.blif       data/runs/table2/2d/dot4_4bit_nor.json       --columns 512
+python -m mem3dmapper.cli.map_2d public-data/table2/2d/matvec_8bit_pp_nor.blif  data/runs/table2/2d/matvec_8bit_pp_nor.json  --columns 512
+python -m mem3dmapper.cli.map_2d public-data/table2/2d/matvec4x4_8bit_nor.blif  data/runs/table2/2d/matvec4x4_8bit_nor.json  --columns 512
+```
